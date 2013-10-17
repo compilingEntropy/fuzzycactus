@@ -101,7 +101,7 @@ if [[ $filefound -eq 1 ]]; then
 		mkdir ./Results/$tempseed/
 	fi	
 	cp $dir/$crash ./Results/$tempseed/
-	cp /var/www/files/$tempseed.mov ./Results/$tempseed
+	cp /var/www/files/$tempseed.* ./Results/$tempseed
 else
 	if [ "${#tested[$i]}" -ne 0 ]; then
 		files=( "${files[@]}" "${tested[$i-1]}" )

@@ -23,6 +23,7 @@ if [[ -z $file ]]; then
 	echo "Usage: ./autofuzz.sh ./file.mov"
 	exit
 fi
+extension=$( sed 's|.*\.||g' )
 
 if [[ ! -e ./tested.log ]]; then
 	touch ./tested.log
@@ -167,9 +168,9 @@ slowdown()
 for (( i = 1; i < 10000; i++ )); do
 	if [ $( grep -c "~$i " ./tested.log ) -lt 1 ]; then
 		echo "~$i `date '+%y.%m.%d-%H.%M.%S'`"
-		zzuf -c -r 0.0001:0.001 -s $i < $file > /var/www/files/$i.mov
+		zzuf -c -r 0.0001:0.001 -s $i < $file > /var/www/files/$i.$extension
 		echo "File generated"
-		sbopenurl http://127.0.0.1/files/$i.mov
+		sbopenurl http://127.0.0.1/files/$i.$extension
 		echo "Safari opened"
 		sleep $time
 		resetsafari
