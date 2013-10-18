@@ -123,6 +123,19 @@ if [[ $( ps -ax | grep lighttpd | grep -c -v grep ) -lt 1 ]]; then
 	fi
 fi
 
+#neuter crash reporting
+if [ $( grep -c '^127.0.0.1       iphonesubmissions.apple.com$' /private/etc/hosts ) -lt 1 ]; then
+	if [[ $(whoami) != "root" ]]; then
+		echo "Run this script again with root access (this is only required once)."
+		exit
+	else
+		echo "" >> /private/etc/hosts
+		echo "#Begin fuzzycactus" >> /private/etc/hosts
+		echo "127.0.0.1       iphonesubmissions.apple.com" >> /private/etc/hosts
+		echo "#End fuzzycactus" >> /private/etc/hosts
+	fi
+fi
+
 #check for file in
 if [[ -z $file ]]; then
 	echo "You must provide a file as a parameter."
