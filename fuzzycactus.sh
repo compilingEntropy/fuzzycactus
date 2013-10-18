@@ -6,7 +6,7 @@ install()
 {
 	apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils
 }
-#a test.mov file in the directory
+#a file to fuzz
 #zzuf
 #'sbutils' from cydia
 #'bc' from cydia
@@ -23,7 +23,7 @@ time=11
 #check for file in
 if [[ -z $file ]]; then
 	echo "You must provide a file as a parameter."
-	echo "Usage: ./autofuzz.sh ./file.mov"
+	echo "Usage: ./fuzzycactus.sh ./file.mov"
 	exit
 fi
 

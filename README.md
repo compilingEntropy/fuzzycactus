@@ -19,5 +19,3 @@ To start-
 
 To stop-
 ./stop.sh
-
-First Run Bug: You have to run fuzzycactus.sh directly on first run to set up dependencies. After it finishes setting things up, you should kill it and run start.sh. Otherwise, your logs will be messed up. Fix in the works.
