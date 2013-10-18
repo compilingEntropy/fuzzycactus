@@ -5,11 +5,17 @@ crashroot="/private/var/mobile/Library/Logs/CrashReporter"
 crashpanics="$crashroot/Panics"
 crashdirs=( "$crashroot" "$crashpanics" )
 
+if [[ ! -d $crashpanics/ ]]; then
+	mkdir -p $crashpanics/
+fi
 if [[ ! -d ./Crashes/Panics/ ]]; then
 	mkdir -p ./Crashes/Panics/
 fi
 if [[ ! -d ./Results/ ]]; then
 	mkdir ./Results/
+fi
+if [[ ! -d ./logs/ ]]; then
+	mkdir ./logs/
 fi
 if [[ ! -e ./fuzz.log ]]; then
 	touch ./fuzz.log
@@ -119,6 +125,9 @@ if [[ $( ls $crashroot/ | grep -c "Reset" ) -ge 1 ]]; then
 fi
 if [[ $( ls $crashroot/ | grep -c "LowMemory" ) -ge 1 ]]; then
 	rm $crashroot/LowMemory*.plist
+fi
+if [[ $( ls $crashroot/ | grep -c "LowBatteryLog" ) -ge 1 ]]; then
+	rm $crashroot/LowBatteryLog*.plist
 fi
 crashcount
 echo "Removed $(($crashcount1-$crashcount)) garbage file(s)."

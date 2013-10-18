@@ -7,6 +7,20 @@ install()
 	apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils
 }
 
+#make directories
+if [[ ! -e ./tested.log ]]; then
+	touch ./tested.log
+fi
+if [[ ! -d /private/var/www/files/ ]]; then
+	mkdir -p /private/var/www/files/
+fi
+if [[ ! -d /private/var/www/ ]]; then
+	mkdir -p /private/var/www/
+fi
+if [[ ! -d /private/var/log/lighttpd/ ]]; then
+	mkdir /private/var/log/lighttpd/
+fi
+
 #check dependencies
 depends=( "com.innoying.sbutils" "bc" "lighttpd" "adv-cmds" "com.cameronfarzaneh.safariresetter" "curl" "wget" "coreutils" "zzuf" )
 checkdepends()

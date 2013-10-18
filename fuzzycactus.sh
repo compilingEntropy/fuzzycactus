@@ -37,8 +37,14 @@ fi
 if [[ ! -e ./tested.log ]]; then
 	touch ./tested.log
 fi
-if [[ ! -d /var/www/files/ ]]; then
-	mkdir -p /var/www/files/
+if [[ ! -d /private/var/www/files/ ]]; then
+	mkdir -p /private/var/www/files/
+fi
+if [[ ! -d /private/var/www/ ]]; then
+	mkdir -p /private/var/www/
+fi
+if [[ ! -d /private/var/log/lighttpd/ ]]; then
+	mkdir /private/var/log/lighttpd/
 fi
 
 #check dependencies
@@ -138,7 +144,7 @@ fi
 
 #check document-root in server config
 if [[ $( grep server.document-root /private/etc/lighttpd.conf ) != 'server.document-root = "/var/www/"' ]]; then
-	echo "You must have your document root set up in /var/www/"
+	echo "You must have your document root set up in /private/var/www/"
 	echo "Please modify your /private/etc/lighttpd.conf file accordingly."
 	exit
 fi
@@ -191,7 +197,7 @@ slowdown()
 for (( i = 1; i < 10000; i++ )); do
 	if [ $( grep -c "~$i " ./tested.log ) -lt 1 ]; then
 		echo "~$i `date '+%y.%m.%d-%H.%M.%S'`"
-		zzuf -c -r 0.0001:0.001 -s $i < $file > /var/www/files/"$i"."$extension"
+		zzuf -c -r 0.0001:0.001 -s $i < $file > /private/var/www/files/"$i"."$extension"
 		echo "File generated"
 		sbopenurl http://127.0.0.1/files/"$i"."$extension"
 		echo "Safari opened"
