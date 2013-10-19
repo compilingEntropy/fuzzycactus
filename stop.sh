@@ -10,4 +10,9 @@ else
 	echo "Multiple instances of fuzzycactus found, please kill them manually."
 	echo "$( ps -ax | grep fuzzycactus | grep -v grep )"
 fi
+
+if [[ ! -e ./crashclean.sh ]]; then
+	echo "No 'crashclean.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
+	exit
+fi
 ./crashclean.sh

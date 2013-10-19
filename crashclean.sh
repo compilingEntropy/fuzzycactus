@@ -79,22 +79,27 @@ if [ $crashyear -eq $logyear ]; then
 
 				elif [ $crashminute -lt $logminute ]; then
 					notinfile=1
+					unpaired=( "${unpaired[@]}" "$crash" )
 				fi
 
 			elif [ $crashhour -lt $loghour ]; then
 				notinfile=1
+				unpaired=( "${unpaired[@]}" "$crash" )
 			fi
 
 		elif [ $crashday -lt $logday ]; then
 			notinfile=1
+			unpaired=( "${unpaired[@]}" "$crash" )
 		fi
 
 	elif [ $crashmonth -lt $logmonth ]; then
 		notinfile=1
+		unpaired=( "${unpaired[@]}" "$crash" )
 	fi
 
 elif [ $crashyear -lt $logyear ]; then
 	notinfile=1
+	unpaired=( "${unpaired[@]}" "$crash" )
 fi
 }
 
@@ -130,7 +135,14 @@ if [[ $( ls $crashroot/ | grep -c "LowBatteryLog" ) -ge 1 ]]; then
 	rm $crashroot/LowBatteryLog*.plist
 fi
 crashcount
-echo "Removed $(($crashcount1-$crashcount)) garbage file(s)."
+if [[ $(($crashcount1-$crashcount)) -ne 0 ]]; then
+	echo "Removed $(($crashcount1-$crashcount)) garbage file(s)."
+fi
+
+if [ $crashcount -ge 1 ]; then
+	echo "Crashes found!"
+	echo "Finding files that caused crashes, please wait..."
+fi
 
 tested=( $( sed 's|.* ||g' ./tested.log ) )
 
@@ -147,24 +159,11 @@ for dir in "${crashdirs[@]}"; do
 	done
 done
 
-if [[ $notinfile -eq 1 ]]; then
-	echo "Not all crashes were able to be paired up with seeds."
-	echo "This is probably due to crashes that were in your CrashReporter directory prior to fuzzing."
-	echo "Remove those crashes from $crashroot for cleaner results."
-fi
-
 if [ "${#files[@]}" -ge 1 ]; then
 	for file in "${files[@]}"; do
 		seeds=( "${seeds[@]}" $( grep $file ./tested.log | sed "s| $file||g;s|~||g" ) )
 		sed -i "s|$file|$file\*|g" ./tested.log
 	done
-fi
-
-if [[ $( grep -c "No matching processes were found" ./fuzz.log ) -gt 0 ]]; then
-	echo 'Found things in the logs indicating MobileSafari may have crashed.'
-	safarifiles=$( grep 'No matching processes were found' -B 5 ./fuzz.log | grep '~' | sed "s| .*||g;s|~||g" )
-	seeds=( "${seeds[@]}" "$safarifiles" )
-	sed -i -r "s|~$safarifiles .*$|&\*|g" ./tested.log
 fi
 
 crashcount
@@ -189,8 +188,23 @@ if [[ $panics1 -ge 1 ]]; then
 	fi
 fi
 
-if [ $( grep -c '1' ./fuzz.log ) -ge 1 ]; then
-	mv ./fuzz.log ./logs/`date '+%y.%m.%d-%H.%M.%S'`.log
+if [[ $( grep -c "No matching processes were found" ./fuzz.log ) -gt 0 ]]; then
+	echo 'Found things in the logs indicating MobileSafari may have crashed.'
+	safarifiles=$( grep 'No matching processes were found' -B 5 ./fuzz.log | grep '~' | sed "s| .*||g;s|~||g" )
+	seeds=( "${seeds[@]}" "$safarifiles" )
+	sed -i -r "s|~$safarifiles .*$|&\*|g" ./tested.log
+	echo "Seeds which possibly caused MobileSafari crashes:"
+	echo "${safarifiles[@]}"
+fi
+
+if [[ $notinfile -eq 1 ]]; then
+	echo "Not all crashes were able to be paired up with seeds."
+	echo "This is probably due to crashes that were in your CrashReporter directory prior to fuzzing."
+	unpaired=( $( for crash in "${unpaired[@]}"; do echo "$crash"; done | sort -u ) )
+	echo "Crashes which were unable to be paired with a seed:"
+	for pairfail in "${unpaired[@]}"; do
+		echo "$pairfail"
+	done
 fi
 
 if [ "${#seeds[@]}" -ge 1 ]; then
@@ -199,4 +213,8 @@ if [ "${#seeds[@]}" -ge 1 ]; then
 	for seed in "${seeds[@]}"; do
 		echo "$seed"
 	done
+fi
+
+if [ $( grep -c '1' ./fuzz.log ) -ge 1 ]; then
+	mv ./fuzz.log ./logs/`date '+%y.%m.%d-%H.%M.%S'`.log
 fi
