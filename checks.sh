@@ -1,8 +1,9 @@
 #!/bin/bash
 
+installpkgs="apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils"
 install()
 {
-	apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils
+			 apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils
 }
 
 #make directories
@@ -26,11 +27,18 @@ checkdepends()
 	hasdepends=1
 	haszzuf=1
 	for item in "${depends[@]}"; do
-		if [ $( dpkg -l | grep -c $item ) -lt 1 ]; then
-			echo "Missing '$item'"'!'
-			hasdepends=0
-			if [[ $item == "zzuf" ]]; then
-				haszzuf=0
+		if [[ "$item" == "coreutils" ]]; then
+			if [ $( dpkg -l | grep -c $item ) -lt 2 ]; then
+				echo "Missing '$item'"'!'
+				hasdepends=0
+			fi
+		else
+			if [ $( dpkg -l | grep -c $item ) -lt 1 ]; then
+				echo "Missing '$item'"'!'
+				hasdepends=0
+				if [[ $item == "zzuf" ]]; then
+					haszzuf=0
+				fi
 			fi
 		fi
 	done
@@ -46,11 +54,34 @@ if [[ $hasdepends -eq 0 ]]; then
 		read answer
 		if [[ "$answer" == "n" ]]; then
 				echo "To install most of the dependencies required, run the following as root:"
-				echo "installpkgs"
+				echo "$installpkgs"
 				echo "If you're missing zzuf, get it at 'https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb'."
 				exit
 		elif [[ "$answer" == "y" ]]; then
-			if [[ $( whoami ) == "root" ]]; then
+			if [[ ! -e /usr/bin/whoami ]]; then
+				echo "Because you don't have coreutils, I can't tell if you're running this script as root."
+				while (true);
+				do
+					echo "Are you running this script as root? (y/n)"
+					echo "(If you aren't, the installation of missing dependencies will fail.)"
+					read answer
+					if [[ $answer == "n" ]]; then
+							isroot=0
+							break
+					elif [[ $answer == "y" ]]; then
+							isroot=2
+							break
+					else
+							echo "Not a valid reponse; valid responses are 'y', or 'n'."
+					fi
+				done
+			elif [[ $( whoami ) == "root" ]]; then
+				isroot=1
+			else
+				isroot=0
+			fi
+
+			if [ $isroot -ge 1 ]; then
 				if [[ $( dpkg -l | grep apt7 | grep tool | grep -c Debian ) -eq 1 ]]; then
 					echo "Installing required installpkgs..."
 					install
@@ -76,10 +107,11 @@ if [[ $hasdepends -eq 0 ]]; then
 				fi
 			else
 				echo "This script was unable to set up the required dependencies for you because you're not running this script as root."
+				echo "Try running this script again as root, or complete the installation of missing dependencies manually."
 			fi
 			echo "To install most of the dependencies required, run the following as root:"
 			echo "apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl"
-			echo "If you're missing zzuf, find it on the googlez."
+			echo "If you're missing zzuf, you can get it here: https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb."
 			exit
 		else
 		echo "Not a valid reponse; valid responses are 'y', or 'n'."
@@ -95,15 +127,15 @@ if [[ ! -e /private/etc/lighttpd.conf ]]; then
 		echo "Would you like me to set one up for you? (y/n)"
 		read answer
 		if [[ $answer == "n" ]]; then
-				echo "You'll need to set one up yourself then, see https://ghostbin.com/paste/28bx6 for an example."
+				echo "You'll need to set one up yourself then, see https://ghostbin.com/paste/suk7q for an example."
 				exit
 		elif [[ $answer == "y" ]]; then
 				echo "Setting up..."
-				curl -# http://ghostbin.com/paste/28bx6/raw > /private/etc/lighttpd.conf
+				curl -# http://ghostbin.com/paste/suk7q/raw > /private/etc/lighttpd.conf
 				sed -i 's|\r$||' /private/etc/lighttpd.conf
 				if [[ ! -e /private/etc/lighttpd.conf ]]; then
 					echo "Something went wrong while setting up the file, please set one up manually or try again."
-					echo "See https://ghostbin.com/paste/28bx6 for an example."
+					echo "See https://ghostbin.com/paste/suk7q for an example."
 					exit
 				fi
 				echo "Done"
