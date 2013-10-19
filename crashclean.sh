@@ -24,6 +24,7 @@ if [[ ! -e ./tested.log ]]; then
 	touch ./tested.log
 fi
 
+
 crashcount()
 {
 	crashcount=$( ls $crashroot/ | grep -c plist )
@@ -74,6 +75,7 @@ if [ $crashyear -eq $logyear ]; then
 						#found it
 						files=( "${files[@]}" "${tested[$i]}" )
 						filefound=1
+						echo -n "."
 						break
 					fi
 
@@ -119,6 +121,16 @@ else
 	fi
 fi
 }
+
+#Fix for iOS7 Crashes
+for dir in "${crashdirs[@]}"; do
+	crashlist $dir
+	for crash in "${crashes[@]}"; do
+		if [ $( echo "$crash" | grep -c ".synced" ) -ge 1 ]; then
+			mv "$dir/$crash" "$dir/$( echo $crash | sed 's|.synced||g' )"
+		fi
+	done
+done
 
 crashcount
 crashcount1=$crashcount
