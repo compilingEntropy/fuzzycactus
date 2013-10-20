@@ -15,4 +15,4 @@ if [[ ! -e ./crashclean.sh ]]; then
 	echo "No 'crashclean.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
 	exit
 fi
-./crashclean.sh &> | tee ./fuzz.log
+./crashclean.sh 2>&1 | tee -a ./fuzz.log
