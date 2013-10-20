@@ -28,17 +28,15 @@ checkdepends()
 	haszzuf=1
 	for item in "${depends[@]}"; do
 		if [[ "$item" == "coreutils" ]]; then
-			if [ $( dpkg -l | grep -c $item ) -lt 2 ]; then
-				echo "Missing '$item'"'!'
-				hasdepends=0
-			fi
+			amount=2
 		else
-			if [ $( dpkg -l | grep -c $item ) -lt 1 ]; then
-				echo "Missing '$item'"'!'
-				hasdepends=0
-				if [[ $item == "zzuf" ]]; then
-					haszzuf=0
-				fi
+			amount=1
+		fi
+		if [ $( dpkg -l | grep -c $item ) -lt $amount ]; then
+			echo "Missing '$item'"'!'
+			hasdepends=0
+			if [[ $item == "zzuf" ]]; then
+				haszzuf=0
 			fi
 		fi
 	done
@@ -56,7 +54,7 @@ if [[ $hasdepends -eq 0 ]]; then
 				echo "To install most of the dependencies required, run the following as root:"
 				echo "$installpkgs"
 				echo "If you're missing zzuf, get it at 'https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb'."
-				exit
+				exit 1
 		elif [[ "$answer" == "y" ]]; then
 			if [[ ! -e /usr/bin/whoami ]]; then
 				echo "Because you don't have coreutils, I can't tell if you're running this script as root."
@@ -90,7 +88,7 @@ if [[ $hasdepends -eq 0 ]]; then
 						dpkg -i ./zzuf_0.13-1_iphoneos-arm.deb
 						if [ $( dpkg -l | grep -c zzuf ) -ne 1 ]; then
 							echo "Something went wrong with the install, please install zzuf manually or try again."
-							exit
+							exit 1
 						else
 							rm ./zzuf_0.13-1_iphoneos-arm.deb
 						fi
@@ -100,6 +98,9 @@ if [[ $hasdepends -eq 0 ]]; then
 						break
 					else
 						echo "Something went wrong with the install, please install the dependencies you're missing manually or try again."
+						if [[ $isroot -eq 2 ]]; then
+							echo "Sounds like you weren't actually root, please run this script again as root or complete setup manually."
+						fi
 					fi
 				else
 					echo "This script was unable to set up the required dependencies for you because you don't have apt7 installed."
@@ -112,7 +113,7 @@ if [[ $hasdepends -eq 0 ]]; then
 			echo "To install most of the dependencies required, run the following as root:"
 			echo "apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl"
 			echo "If you're missing zzuf, you can get it here: https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb."
-			exit
+			exit 1
 		else
 		echo "Not a valid reponse; valid responses are 'y', or 'n'."
 		fi
@@ -128,7 +129,7 @@ if [[ ! -e /private/etc/lighttpd.conf ]]; then
 		read answer
 		if [[ $answer == "n" ]]; then
 				echo "You'll need to set one up yourself then, see https://ghostbin.com/paste/suk7q for an example."
-				exit
+				exit 1
 		elif [[ $answer == "y" ]]; then
 				echo "Setting up..."
 				curl -# http://ghostbin.com/paste/suk7q/raw > /private/etc/lighttpd.conf
@@ -136,7 +137,7 @@ if [[ ! -e /private/etc/lighttpd.conf ]]; then
 				if [[ ! -e /private/etc/lighttpd.conf ]]; then
 					echo "Something went wrong while setting up the file, please set one up manually or try again."
 					echo "See https://ghostbin.com/paste/suk7q for an example."
-					exit
+					exit 1
 				fi
 				echo "Done"
 				break
@@ -150,14 +151,14 @@ fi
 if [[ "$( grep server.document-root /private/etc/lighttpd.conf )" != 'server.document-root = "/var/www/" '* && "$( grep server.document-root /private/etc/lighttpd.conf )" != $( echo -e "server.document-root = \"/var/www/\"\n" ) ]]; then
 	echo "You must have your document root set up in /private/var/www/"
 	echo "Please modify your /private/etc/lighttpd.conf file accordingly."
-	exit
+	exit 1
 fi
 
 #check server port is 80
 if [[ "$( grep server.port /private/etc/lighttpd.conf )" != "server.port = 80 "* && "$( grep server.port /private/etc/lighttpd.conf )" != $( echo -e "server.port = 80\n" ) ]]; then
 	echo "You must have your server port set to 80."
 	echo "Please modify your /private/etc/lighttpd.conf file accordingly."
-	exit
+	exit 1
 fi
 
 #start server
@@ -168,7 +169,7 @@ if [[ $( ps -ax | grep lighttpd | grep -c -v grep ) -lt 1 ]]; then
 	sleep 1
 	if [[ $( ps -ax | grep lighttpd | grep -c -v grep ) -lt 1 ]]; then
 		echo "Still no server running."
-		exit
+		exit 1
 	else
 		echo "Server started."
 	fi
@@ -178,7 +179,7 @@ fi
 if [ $( grep -c '^127.0.0.1       iphonesubmissions.apple.com$' /private/etc/hosts ) -lt 1 ]; then
 	if [[ $(whoami) != "root" ]]; then
 		echo "Run this script again with root access (this is only required once)."
-		exit
+		exit 1
 	else
 		echo "" >> /private/etc/hosts
 		echo "#Begin fuzzycactus" >> /private/etc/hosts
@@ -186,3 +187,5 @@ if [ $( grep -c '^127.0.0.1       iphonesubmissions.apple.com$' /private/etc/hos
 		echo "#End fuzzycactus" >> /private/etc/hosts
 	fi
 fi
+
+exit 2

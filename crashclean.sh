@@ -110,11 +110,12 @@ sortcrashes()
 if [[ $filefound -eq 1 ]]; then
 	latest="${files[$(( ${#files[@]}-1 ))]}"
 	tempseed=$( grep $latest ./tested.log | sed "s| $latest||g;s|~||g" )
-	if [[ ! -d ./Results/$tempseed/ ]]; then
-		mkdir ./Results/$tempseed/
+	crashtype=$( echo "$crash" | sed 's|_.*||g' | sed 's|-.*||g' )
+	if [[ ! -d ./Results/$crashtype_$tempseed/ ]]; then
+		mkdir ./Results/$crashtype_$tempseed/
 	fi	
-	cp $dir/$crash ./Results/$tempseed/
-	cp /var/www/files/$tempseed.* ./Results/$tempseed
+	cp $dir/$crash ./Results/$crashtype_$tempseed/
+	cp /var/www/files/$tempseed.* ./Results/$crashtype_$tempseed/
 else
 	if [ "${#tested[$i]}" -ne 0 ]; then
 		files=( "${files[@]}" "${tested[$i-1]}" )

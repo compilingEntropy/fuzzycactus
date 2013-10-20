@@ -20,7 +20,11 @@ if [[ ! -e ./checks.sh ]]; then
 	echo "No 'checks.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
 	exit
 fi
+
 ./checks.sh
+if [ $? -ne 2 ]; then
+	exit
+fi
 
 #check for file in
 if [[ -z $file ]]; then
