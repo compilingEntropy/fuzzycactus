@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #depends on:
-#--------------->   com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils
+#com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils
 #a file to fuzz
 #zzuf
 #'sbutils' from cydia
