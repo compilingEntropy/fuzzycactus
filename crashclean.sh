@@ -2,17 +2,22 @@
 
 #crash directories
 crashroot="/private/var/mobile/Library/Logs/CrashReporter"
+precrashroot="/private/var/logs/CrashReporter"
 crashpanics="$crashroot/Panics"
-crashdirs=( "$crashroot" "$crashpanics" )
+precrashpanics="$precrashroot/Panics"
+crashdirs=( "$crashroot" "$precrashroot" "$crashpanics" "$precrashpanics" )
 
-if [[ ! -d $crashpanics/ ]]; then
-	mkdir -p $crashpanics/
+for dir in "${crashdirs[@]}"; do
+	if [[ ! -d $dir/ ]]; then
+		mkdir -p $dir/
+	fi
+done
+
+if [[ ! -d ./Results/ ]]; then
+	mkdir ./Results/
 fi
 if [[ ! -d ./Crashes/Panics/ ]]; then
 	mkdir -p ./Crashes/Panics/
-fi
-if [[ ! -d ./Results/ ]]; then
-	mkdir ./Results/
 fi
 if [[ ! -d ./logs/ ]]; then
 	mkdir ./logs/
@@ -24,17 +29,22 @@ if [[ ! -e ./tested.log ]]; then
 	touch ./tested.log
 fi
 
-
+#count crashes of different types
 crashcount()
 {
 	crashcount=$( ls $crashroot/ | grep -c plist )
+	let crashcount+=$( ls $precrashroot/ | grep -c plist )
+	paniccount=$( ls $crashpanics/ | grep -c plist )
+	let paniccount+=$( ls $precrashpanics/ | grep -c plist )
 }
 
+#generate an array of crash files for the given array $1
 crashlist()
 {
 	crashes=( $( ls -p $1/ | grep -v '\/' | grep 'plist' ) )
 }
 
+#pull times out of the crash files
 getcrashtime()
 {
 	date=( $( grep 'Date' $1 ) )
@@ -46,6 +56,7 @@ getcrashtime()
 	crashsecond="${date[2]:6:2}"
 }
 
+#pull times out of the tested.log file
 getlogtime()
 {
 	logyear="${tested[$i]:0:2}"
@@ -56,6 +67,7 @@ getlogtime()
 	logsecond="${tested[$i]:15:2}"
 }
 
+#find where the crashtime fits in the logs and return the file that caused it to files[]
 comparetimes()
 {
 if [ $crashyear -eq $logyear ]; then
@@ -105,25 +117,30 @@ elif [ $crashyear -lt $logyear ]; then
 fi
 }
 
+#pairs crashes with files that caused them, and copy them both to a directory created in ./Results/
 sortcrashes()
 {
 if [[ $filefound -eq 1 ]]; then
-	latest="${files[$(( ${#files[@]}-1 ))]}"
-	tempseed=$( grep $latest ./tested.log | sed "s| $latest||g;s|~||g" )
-	crashtype=$( echo "$crash" | sed 's|_.*||g' | sed 's|-.*||g' )
+	latest="${files[$(( ${#files[@]}-1 ))]}" #last file in files[] array
+	tempseed=$( grep $latest ./tested.log | sed "s| $latest||g;s|~||g" ) #get the seed of the file that caused the crash
+	crashtype=$( echo "$crash" | sed 's|_.*||g' | sed 's|-.*||g' ) #type of crash determined by whatever comes before '-' or '_' in crash name
+	
+	#create directory if it does not exist, and copy files to that directory
 	if [[ ! -d ./Results/$crashtype_$tempseed/ ]]; then
 		mkdir ./Results/$crashtype_$tempseed/
 	fi	
 	cp $dir/$crash ./Results/$crashtype_$tempseed/
 	cp /var/www/files/$tempseed.* ./Results/$crashtype_$tempseed/
 else
+	#file not found, return the last file tested to files[]
 	if [ "${#tested[$i]}" -ne 0 ]; then
 		files=( "${files[@]}" "${tested[$i-1]}" )
 	fi
+	echo -n "-"
 fi
 }
 
-#Fix for iOS7 Crashes
+#Fix for iOS7 crashes
 for dir in "${crashdirs[@]}"; do
 	crashlist $dir
 	for crash in "${crashes[@]}"; do
@@ -133,32 +150,38 @@ for dir in "${crashdirs[@]}"; do
 	done
 done
 
+#delete garbage files and count how many you've deleted
 crashcount
 crashcount1=$crashcount
-if [[ $( ls $crashroot/ | grep -c "Latest" ) -ge 1 ]]; then
-	rm $crashroot/Latest*.plist
-fi
-if [[ $( ls $crashroot/ | grep -c "Reset" ) -ge 1 ]]; then
-	rm $crashroot/Reset*.plist
-fi
-if [[ $( ls $crashroot/ | grep -c "LowMemory" ) -ge 1 ]]; then
-	rm $crashroot/LowMemory*.plist
-fi
-if [[ $( ls $crashroot/ | grep -c "LowBatteryLog" ) -ge 1 ]]; then
-	rm $crashroot/LowBatteryLog*.plist
-fi
+for dir in "${crashdirs[@]:0:2}"; do
+	if [[ $( ls $dir/ | grep -c "Latest" ) -ge 1 ]]; then
+		rm $dir/Latest*.plist
+	fi
+	if [[ $( ls $dir/ | grep -c "Reset" ) -ge 1 ]]; then
+		rm $dir/Reset*.plist
+	fi
+	if [[ $( ls $dir/ | grep -c "LowMemory" ) -ge 1 ]]; then
+		rm $dir/LowMemory*.plist
+	fi
+	if [[ $( ls $dir/ | grep -c "LowBatteryLog" ) -ge 1 ]]; then
+		rm $dir/LowBatteryLog*.plist
+	fi
+done
 crashcount
 if [[ $(($crashcount1-$crashcount)) -ne 0 ]]; then
 	echo "Removed $(($crashcount1-$crashcount)) garbage file(s)."
 fi
 
-if [ $crashcount -ge 1 ]; then
+#tell users if crashes exist
+if [ $crashcount -ge 1 -o $paniccount -ge 1 ]; then
 	echo "Crashes found!"
 	echo "Finding files that caused crashes, please wait..."
 fi
 
+#store timestamps of all files tested so far in this session to tested[]
 tested=( $( sed 's|.* ||g' ./tested.log ) )
 
+#main routine
 for dir in "${crashdirs[@]}"; do
 	crashlist $dir
 	for crash in "${crashes[@]}"; do
@@ -172,35 +195,53 @@ for dir in "${crashdirs[@]}"; do
 	done
 done
 
+#newline to seperate the '.' and '-' if they exist
+if [ $crashcount -ge 1 -o $paniccount -ge 1 ]; then
+	echo ""
+fi
+
+#build seeds[]
 if [ "${#files[@]}" -ge 1 ]; then
 	for file in "${files[@]}"; do
-		seeds=( "${seeds[@]}" $( grep $file ./tested.log | sed "s| $file||g;s|~||g" ) )
-		sed -i "s|$file|$file\*|g" ./tested.log
+		seeds=( "${seeds[@]}" $( grep $file ./tested.log | sed "s| $file||g;s|~||g" ) ) #return the seed for a given crash
+		sed -i "s|$file|$file\*|g" ./tested.log #append a '*' to each entry in tested.log that is associated with a crash
 	done
 fi
 
+#move crashes and tell how many have been moved
 crashcount
 crashcount1=$crashcount
 if [ $crashcount -ge 1 ]; then
 	echo "You have $crashcount crash(es)."
-	mv $crashroot/*.plist ./Crashes/
+	for dir in "${crashdirs[@]:0:2}"; do
+		if [ $( ls $dir/ | grep -c plist ) -ge 1 ]; then
+			mv $dir/*.plist ./Crashes/
+		fi
+	done
 	crashcount
 	echo "Moved $(($crashcount1-$crashcount)) crash(es) to ./Crashes/ for you to inspect."
 	if [[ $crashcount1 -ne $(($crashcount1-$crashcount)) ]]; then
 		echo "Not all files moved, look in $crashroot/ for the rest."
 	fi
 fi
-panics1=$( ls $crashpanics | grep -c plist )
-if [[ $panics1 -ge 1 ]]; then
-	echo "You have $panics1 kernel panic(s)."
-	mv $crashpanics/*.plist ./Crashes/Panics/
-	panics=$( ls $crashpanics | grep -c plist )
-	echo "Moved $(($panics1-$panics)) kernel panic(s) to ./Crashes/Panics/ for you to inspect."
-	if [[ $panics1 -ne $(($panics1-$panics)) ]]; then
+#move panics and tell how many have been moved
+crashcount
+paniccount1=$paniccount
+if [[ $paniccount1 -ge 1 ]]; then
+	echo "You have $paniccount1 kernel panic(s)."
+	for dir in "${crashdirs[@]:2:2}"; do
+		if [ $( ls $dir/ | grep -c plist ) -ge 1 ]; then
+			mv $dir/*.plist ./Crashes/Panics/
+		fi
+	done
+	crashcount
+	echo "Moved $(($paniccount1-$paniccount)) kernel panic(s) to ./Crashes/Panics/ for you to inspect."
+	if [[ $paniccount1 -ne $(($paniccount1-$paniccount)) ]]; then
 		echo "Not all files moved, look in $crashpanics/ for the rest."
 	fi
 fi
 
+#if there are things in the log indicating mobilesafari may have crashed, add them to seeds[] and '*' their entries in tested.log
 if [[ $( grep -c "No matching processes were found" ./fuzz.log ) -gt 0 ]]; then
 	echo 'Found things in the logs indicating MobileSafari may have crashed.'
 	safarifiles=$( grep 'No matching processes were found' -B 5 ./fuzz.log | grep '~' | sed "s| .*||g;s|~||g" )
@@ -210,6 +251,7 @@ if [[ $( grep -c "No matching processes were found" ./fuzz.log ) -gt 0 ]]; then
 	echo "${safarifiles[@]}"
 fi
 
+#if there were crashes that couldn't be matched with files, list them
 if [[ $notinfile -eq 1 ]]; then
 	echo "Not all crashes were able to be paired up with seeds."
 	echo "This is probably due to crashes that were in your CrashReporter directory prior to fuzzing."
@@ -220,6 +262,7 @@ if [[ $notinfile -eq 1 ]]; then
 	done
 fi
 
+#if there are seeds that caused crashes, list them
 if [ "${#seeds[@]}" -ge 1 ]; then
 	seeds=( $( for seed in "${seeds[@]}"; do echo "$seed"; done | sort -n -u ) )
 	echo "Files/seeds which likely caused crashes, and are worth checking out:"
@@ -228,6 +271,7 @@ if [ "${#seeds[@]}" -ge 1 ]; then
 	done
 fi
 
+#clean up for new fuzzing session
 if [ $( grep -c '1' ./fuzz.log ) -ge 1 ]; then
 	mv ./fuzz.log ./logs/`date '+%y.%m.%d-%H.%M.%S'`.log
 fi

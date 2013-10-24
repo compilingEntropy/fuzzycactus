@@ -1,12 +1,12 @@
 #!/bin/bash
 
-pnum=$( ps -ax | grep fuzzycactus | grep -c -v grep )
+pnum=$( ps -ax | grep fuzzycactus | grep -v stop | grep -c -v grep )
 
 if [ $pnum -eq 0 ]; then
 	echo "No fuzzycactus process running."
 else
 	while [ $pnum -ge 1 ]; do
-		kill "$( fuzz=( $( ps -ax | grep fuzzycactus | grep -v grep ) ) && echo ${fuzz[0]} )" &> /dev/null
+		kill "$( fuzz=( $( ps -ax | grep fuzzycactus | grep -v stop | grep -v grep ) ) && echo ${fuzz[0]} )" &> /dev/null
 		echo "Stopped."
 		((pnum--))
 		sleep 0.5

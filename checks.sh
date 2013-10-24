@@ -3,7 +3,7 @@
 installpkgs="apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils"
 install()
 {
-			 apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils
+             apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils
 }
 
 #make directories
@@ -186,6 +186,13 @@ if [ $( grep -c '^127.0.0.1       iphonesubmissions.apple.com$' /private/etc/hos
 		echo "127.0.0.1       iphonesubmissions.apple.com" >> /private/etc/hosts
 		echo "#End fuzzycactus" >> /private/etc/hosts
 	fi
+fi
+
+#check to see if fuzzycactus is already running
+pnum=$( ps -ax | grep fuzzycactus | grep -c -v grep )
+if [ $pnum -ge 4 ]; then
+	echo "A fuzzycactus process is already running, please run 'stop'."
+	exit 1
 fi
 
 exit 2
