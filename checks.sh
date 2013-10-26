@@ -111,7 +111,7 @@ if [[ $hasdepends -eq 0 ]]; then
 				echo "Try running this script again as root, or complete the installation of missing dependencies manually."
 			fi
 			echo "To install most of the dependencies required, run the following as root:"
-			echo "apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl"
+			echo "apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils"
 			echo "If you're missing zzuf, you can get it here: https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb."
 			exit 1
 		else

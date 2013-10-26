@@ -195,7 +195,7 @@ for dir in "${crashdirs[@]}"; do
 	done
 done
 
-#newline to seperate the '.' and '-' if they exist
+#newline to seperate the '.' and '-' from other output (if they exist)
 if [ $crashcount -ge 1 -o $paniccount -ge 1 ]; then
 	echo ""
 fi
@@ -246,7 +246,7 @@ if [[ $( grep -c "No matching processes were found" ./fuzz.log ) -gt 0 ]]; then
 	echo 'Found things in the logs indicating MobileSafari may have crashed.'
 	safarifiles=$( grep 'No matching processes were found' -B 5 ./fuzz.log | grep '~' | sed "s| .*||g;s|~||g" )
 	seeds=( "${seeds[@]}" "$safarifiles" )
-	sed -i -r "s|~$safarifiles .*$|&\*|g" ./tested.log
+	sed -i -r "s|~$safarifiles .*\$|&\*|g" ./tested.log
 	echo "Seeds which possibly caused MobileSafari crashes:"
 	echo "${safarifiles[@]}"
 fi
