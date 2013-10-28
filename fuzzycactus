@@ -1,14 +1,69 @@
 #!/bin/bash
 
+#depends on:
+#a file to fuzz
+#zzuf
+#'sbutils' from cydia
+#'bc' from cydia
+#'lighttpd' from cydia
+#'adv-cmds' from cydia
+#'safariresetter' from cydia
+#'cURL' from cydia
+#'wget' from cydia
+#'coreutils' from cydia
+
 #installs to /usr/bin/
 
 action=$1
 file=$2
-usage="Usage: fuzzycactus [start/stop/help] /path/to/file.mov"
+slowdown=0
+time=11
+params=( $( for arg in $@; do echo "$arg"; done ) )
+usage="Usage: fuzzycactus [start/stop/help] /path/to/file.mov [-s] [-t 11]"
 wrkdir="/private/var/fuzzycactus"
+
+if [[ -z "$action" ]]; then
+	echo "You must provide an action."
+	echo "$usage"
+	exit
+fi
 
 start()
 {
+	#get the time
+	i=0
+	for arg in "${params[@]}"; do
+		if [[ "$arg" == "-t" ]]; then
+			time="${params[$i+1]}"
+		fi
+		if [[ "$arg" == "-s" ]]; then
+			slowdown=1
+		fi
+		((i++))
+	done
+
+	#check the time
+	if [[ $( echo $time | egrep -c "^[0-9]+$" ) -ne 1 ]]; then
+		echo "The time provided isn't valid."
+		echo "Please provide a new time."
+		echo "$usage"
+		exit
+	fi
+
+	#relative paths
+	path="$( pwd )"
+	if [[ "${file:0:2}" == "./" ]]; then
+		file="$path/${file:2}"
+	elif [[ "${file:0:3}" == "../" ]]; then
+		file="$path/$file"
+	fi
+
+	if [[ ! -e "$file" ]]; then
+		echo "The provided file does not exist."
+		echo "Please check your path and try again."
+		exit
+	fi
+
 	cd $wrkdir/
 
 	if [[ ! -e ./checks.sh ]]; then
@@ -31,7 +86,7 @@ start()
 		echo "No 'fuzzycactus.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
 		exit
 	fi
-	./fuzzycactus.sh $file &> ./fuzz.log &
+	./fuzzycactus.sh $file -t $time $( if [ $slowdown -eq 1 ]; then echo "-s"; fi ) &> ./fuzz.log &
 	tail -f ./fuzz.log
 }
 
@@ -69,6 +124,13 @@ helper()
 	echo "For help, do:"
 	echo "	fuzzycactus help"
 	echo ""
+	echo "The -t (time) parameter allows you to change the time between each reset of safari."
+	echo "This is useful because it takes longer for a .mov file to load than for a .jpg for example."
+	echo "The default time used is 11, which works well for a 1 second .mov file."
+	echo "The -s (slowdown) parameter allows you to control whether or not the time between resets will grow slowly over time."
+	echo "This is useful because things like mediaserverd can get messy after a while and cause MobileSafari to take longer to load the file."
+	echo "I recommend turning this setting on for fuzzing anything that gets parsed by mediaserverd, such as a .mov file."
+	echo ""
 	echo "The working directory for fuzzycactus is $wrkdir/."
 	echo "In this directory you will find the tools that make up fuzzycactus, as well as the results of your fuzzing session."
 	echo "All crashes found are placed in $wrkdir/Crashes/ for you to inspect."
@@ -88,30 +150,9 @@ helper()
 }
 
 
-if [[ -z "$action" ]]; then
-	echo "You must provide an action."
-	echo "$usage"
-	exit
-fi
-
 if [[ "$action" == "start" ]]; then
 	if [[ -n "$file" ]]; then
-
-		path="$( pwd )"
-		if [[ "${file:0:2}" == "./" ]]; then
-			file="$path/${file:2}"
-		elif [[ "${file:0:3}" == "../" ]]; then
-			file="$path/$file"
-		fi
-
-		if [[ ! -e "$file" ]]; then
-			echo "The provided file does not exist."
-			echo "Please check your path and try again."
-			exit
-		fi
-
 		start
-
 		exit
 	else
 		echo "You must provide a file."

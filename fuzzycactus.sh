@@ -1,22 +1,34 @@
 #!/bin/bash
 
-#depends on:
-#a file to fuzz
-#zzuf
-#'sbutils' from cydia
-#'bc' from cydia
-#'lighttpd' from cydia
-#'adv-cmds' from cydia
-#'safariresetter' from cydia
-#'cURL' from cydia
-#'wget' from cydia
-#'coreutils' from cydia
-
 #installs to /private/var/fuzzycactus/
 
 file=$1
+slowdown=0
 time=11
-usage="Usage: fuzzycactus [start/stop/help] /path/to/file.mov"
+params=( $( for arg in $@; do echo "$arg"; done ) )
+usage="Usage: fuzzycactus [start/stop/help] /path/to/file.mov [-s] [-t 11]"
+
+
+#get the time
+i=0
+for arg in "${params[@]}"; do
+	if [[ "$arg" == "-t" ]]; then
+		time="${params[$i+1]}"
+	fi
+	if [[ "$arg" == "-s" ]]; then
+		slowdown=1
+	fi
+	((i++))
+done
+
+#check the time
+if [[ $( echo $time | egrep -c "^[0-9]+$" ) -ne 1 ]]; then
+	echo "The time provided isn't valid."
+	echo "Please provide a new time."
+	echo "$usage"
+	exit
+fi
+
 
 if [[ ! -e ./checks.sh ]]; then
 	echo "No 'checks.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
@@ -34,15 +46,16 @@ if [[ -z $file ]]; then
 	echo "$usage"
 	exit
 fi
-
-extension=$( echo $file | sed 's|.*\.||g' )
-
 if [[ ! -e $file ]]; then
 	echo "The file you provided does not exist."
 	echo "Please check your path and try again."
+	exit
 fi
 
+extension=$( echo $file | sed 's|.*\.||g' )
 j=1
+
+cp $file ./file."$extension" &> /dev/null
 
 #may not be necessary, but the idea is that as your device slows down from testing more files, it will add to the sleep time
 slowdown()
@@ -66,9 +79,14 @@ for (( i = 1; i < 10000; i++ )); do
 		resetsafari
 		#killall -KILL mediaserverd
 		echo "Safari killed"
-		slowdown
+		if [ $slowdown -eq 1 ]; then
+			slowdown
+		fi
 		echo "~$i `date '+%y.%m.%d-%H.%M.%S'`" >> ./tested.log
 	else
 		echo "Skipping $i"
 	fi
 done
+
+echo "Done!"
+fuzzycactus stop
