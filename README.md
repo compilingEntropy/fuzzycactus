@@ -14,7 +14,7 @@ Part of the way this works involves running a local server on your device. This 
 
 Always remember: Before you begin fuzzing, go to 'Settings' > 'General' > 'About' > 'Diagnostics & Usage' and check the "Don't Send" option. Otherwise, all your hard work will go to Apple and you will be sad. =(
 
-Usage:  fuzzycactus [start/stop/help] /path/to/file.mov [-s] [-t 11]  
+Usage:  `fuzzycactus [start/stop/help] /path/to/file.mov [-s] [-t 11]`  
 To start fuzzing ./file.mov, do:  
 `	fuzzycactus start ./file.mov`  
 To stop fuzzing, do:  
