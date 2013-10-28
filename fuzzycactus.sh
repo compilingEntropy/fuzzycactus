@@ -1,7 +1,6 @@
 #!/bin/bash
 
 #depends on:
-#com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils
 #a file to fuzz
 #zzuf
 #'sbutils' from cydia
@@ -13,8 +12,11 @@
 #'wget' from cydia
 #'coreutils' from cydia
 
+#installs to /private/var/fuzzycactus/
+
 file=$1
 time=11
+usage="Usage: fuzzycactus [start/stop/help] /path/to/file.mov"
 
 if [[ ! -e ./checks.sh ]]; then
 	echo "No 'checks.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
@@ -29,7 +31,7 @@ fi
 #check for file in
 if [[ -z $file ]]; then
 	echo "You must provide a file as a parameter."
-	echo "Usage: ./fuzzycactus.sh ./file.mov"
+	echo "$usage"
 	exit
 fi
 

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#installs to /private/var/fuzzycactus/
+
 installpkgs="apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils"
 install()
 {
@@ -191,7 +193,7 @@ fi
 #check to see if fuzzycactus is already running
 pnum=$( ps -ax | grep fuzzycactus | grep -c -v grep )
 if [ $pnum -ge 4 ]; then
-	echo "A fuzzycactus process is already running, please run 'stop'."
+	echo "A fuzzycactus process is already running, please run 'fuzzycactus stop'."
 	exit 1
 fi
 

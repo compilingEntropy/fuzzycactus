@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#installs to /private/var/fuzzycactus/
+
 #crash directories
 crashroot="/private/var/mobile/Library/Logs/CrashReporter"
 precrashroot="/private/var/logs/CrashReporter"
