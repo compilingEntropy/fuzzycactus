@@ -18,8 +18,9 @@ action=$1
 file=$2
 slowdown=0
 time=11
+ratio="0.0001:0.001"
 params=( $( for arg in $@; do echo "$arg"; done ) )
-usage="Usage: fuzzycactus [start/stop/help] /path/to/file.mov [-s] [-t 11]"
+usage="Usage: fuzzycactus [start/stop/watch/help] /path/to/file.mov [-s] [-t 11] [-r 0.0001:0.001]"
 wrkdir="/private/var/fuzzycactus"
 
 if [[ -z "$action" ]]; then
@@ -36,6 +37,9 @@ start()
 		if [[ "$arg" == "-t" ]]; then
 			time="${params[$i+1]}"
 		fi
+		if [[ "$arg" == "-r" ]]; then
+			ratio="${params[$i+1]}"
+		fi
 		if [[ "$arg" == "-s" ]]; then
 			slowdown=1
 		fi
@@ -43,11 +47,31 @@ start()
 	done
 
 	#check the time
-	if [[ $( echo $time | egrep -c "^[0-9]+$" ) -ne 1 ]]; then
+	if [ $( echo $time | egrep -c "(^[0-9]+$)|(^[0-9]+[\.][0-9]+$)" ) -eq 0 ]; then
 		echo "The time provided isn't valid."
 		echo "Please provide a new time."
 		echo "$usage"
 		exit
+	fi
+
+	#check the ratio
+	if [ $( echo $ratio | egrep -c "(^[0]*[\.][0-9]+[:][0]*[\.][0-9]+$)|(^[0]*[\.][0-9]+$)" ) -eq 0 ]; then
+		echo "The ratio provided isn't valid."
+		echo "Please provide a new ratio."
+		echo "$usage"
+		exit
+	fi
+	range=( $( echo $ratio | sed "s|:| |g" ) )
+	if [[ -n "${range[1]}" ]]; then
+		if [ $(echo "${range[0]} > ${range[1]}" | bc) -eq 1 ]; then
+			echo "The ratio provided isn't valid."
+			echo "The first ratio argument must be smaller than the second ratio argument."
+			echo "Please provide a new ratio."
+			echo "$usage"
+			exit
+		elif [ $(echo "${range[0]} == ${range[1]}" | bc) -eq 1 ]; then
+			ratio="${range[0]}"
+		fi
 	fi
 
 	#relative paths
@@ -82,11 +106,11 @@ start()
 	fi
 	./crashclean.sh 2>&1 | tee -a ./fuzz.log
 
-	if [[ ! -e ./fuzzycactus.sh ]]; then
-		echo "No 'fuzzycactus.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
+	if [[ ! -e ./injector.sh ]]; then
+		echo "No 'injector.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
 		exit
 	fi
-	./fuzzycactus.sh $file -t $time $( if [ $slowdown -eq 1 ]; then echo "-s"; fi ) &> ./fuzz.log &
+	./injector.sh $file -t $time -r $ratio $( if [ $slowdown -eq 1 ]; then echo "-s"; fi ) &> ./fuzz.log &
 	tail -f ./fuzz.log
 }
 
@@ -113,6 +137,11 @@ stop()
 	./crashclean.sh 2>&1 | tee -a ./fuzz.log
 }
 
+watch()
+{
+	tail -f $wrkdir/fuzz.log
+}
+
 helper()
 {
 	echo "$usage"
@@ -121,16 +150,26 @@ helper()
 	echo "	fuzzycactus start ./file.mov"
 	echo "To stop fuzzing, do:"
 	echo "	fuzzycactus stop"
+	echo "To view the current fuzzing session, do:"
+	echo "	fuzzycactus watch"
 	echo "For help, do:"
 	echo "	fuzzycactus help"
 	echo ""
 	echo "Options:"
 	echo "-t (time)     Allows you to change the time between each reset of MobileSafari"
-	echo "              This is useful because it takes longer for a .mov file to load than for a .jpg for example."
+	echo "-t 11         This is useful because it takes longer for a .mov file to load than for a .jpg for example."
 	echo "              The default time used is 11, which works well for a 1 second .mov file."
 	echo "-s (slowdown) Allows you to control whether or not the time between resets will grow slowly over time."
 	echo "              This is useful because things like mediaserverd can get messy after a while and cause MobileSafari to take longer to load the file."
 	echo "              I recommend turning this setting on for fuzzing anything that gets parsed by mediaserverd, such as a .mov file."
+	echo "              This option is off by default."
+	echo "-r (ratio)    Allows you to change the percent of the file that gets modified."
+	echo "-r 0.001:0.1  If your ratio is 0.004, 0.4% of the file will be randomly modified."
+	echo "              You'll want to turn up the ratio if your file is parsed correctly most of the time,"
+	echo "              or turn it down if your file is rarely parsed correctly."
+	echo "              This can be a static ratio, such as 0.004, or a range of values, such as 0.0001:0.001."
+	echo "              If you provide a range, the ratio used will be any randomly determined value within that range."
+	echo "              The default ratio is 0.0001:0.001. I have found this to be effective for many filetypes and files that are relatively small."
 	echo ""
 	echo "-----"
 	echo "The working directory for fuzzycactus is $wrkdir/."
@@ -164,6 +203,9 @@ if [[ "$action" == "start" ]]; then
 	fi
 elif [[ "$action" == "stop" ]]; then
 	stop
+	exit
+elif [[ "$action" == "watch" ]]; then
+	watch
 	exit
 elif [[ "$action" == "help" ]]; then
 	helper

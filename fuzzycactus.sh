@@ -5,8 +5,9 @@
 file=$1
 slowdown=0
 time=11
+ratio="0.0001:0.001"
 params=( $( for arg in $@; do echo "$arg"; done ) )
-usage="Usage: fuzzycactus [start/stop/help] /path/to/file.mov [-s] [-t 11]"
+usage="Usage: fuzzycactus [start/stop/watch/help] /path/to/file.mov [-s] [-t 11] [-r 0.0001:0.001]"
 
 
 #get the time
@@ -15,6 +16,9 @@ for arg in "${params[@]}"; do
 	if [[ "$arg" == "-t" ]]; then
 		time="${params[$i+1]}"
 	fi
+	if [[ "$arg" == "-r" ]]; then
+		ratio="${params[$i+1]}"
+	fi
 	if [[ "$arg" == "-s" ]]; then
 		slowdown=1
 	fi
@@ -22,13 +26,32 @@ for arg in "${params[@]}"; do
 done
 
 #check the time
-if [[ $( echo $time | egrep -c "^[0-9]+$" ) -ne 1 ]]; then
+if [[ $( echo $time | egrep -c "(^[0-9]+$)|(^[0-9]+[\.][0-9]+$)" ) -ne 1 ]]; then
 	echo "The time provided isn't valid."
 	echo "Please provide a new time."
 	echo "$usage"
 	exit
 fi
 
+#check the ratio
+if [ $( echo $ratio | egrep -c "(^[0]*[\.][0-9]+[:][0]*[\.][0-9]+$)|(^[0]*[\.][0-9]+$)" ) -eq 0 ]; then
+	echo "The ratio provided isn't valid."
+	echo "Please provide a new ratio."
+	echo "$usage"
+	exit
+fi
+range=( $( echo $ratio | sed "s|:| |g" ) )
+if [[ -n "${range[1]}" ]]; then
+	if [ $(echo "${range[0]} > ${range[1]}" | bc) -eq 1 ]; then
+		echo "The ratio provided isn't valid."
+		echo "The first ratio argument must be smaller than the second ratio argument."
+		echo "Please provide a new ratio."
+		echo "$usage"
+		exit
+	elif [ $(echo "${range[0]} == ${range[1]}" | bc) -eq 1 ]; then
+		ratio="${range[0]}"
+	fi
+fi
 
 if [[ ! -e ./checks.sh ]]; then
 	echo "No 'checks.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
@@ -71,7 +94,7 @@ slowdown()
 for (( i = 1; i < 10000; i++ )); do
 	if [ $( grep -c "~$i " ./tested.log ) -lt 1 ]; then
 		echo "~$i `date '+%y.%m.%d-%H.%M.%S'`"
-		zzuf -c -r 0.0001:0.001 -s $i < $file > /private/var/www/files/"$i"."$extension"
+		zzuf -c -r $ratio -s $i < $file > /private/var/www/files/"$i"."$extension"
 		echo "File generated"
 		sbopenurl http://127.0.0.1/files/"$i"."$extension"
 		echo "Safari opened"
