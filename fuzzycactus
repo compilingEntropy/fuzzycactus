@@ -103,15 +103,17 @@ start()
 	if [[ ! -e ./crashclean.sh ]]; then
 		echo "No 'crashclean.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
 		exit
+	else
+		./crashclean.sh 2>&1 | tee -a ./fuzz.log
 	fi
-	./crashclean.sh 2>&1 | tee -a ./fuzz.log
 
 	if [[ ! -e ./injector.sh ]]; then
 		echo "No 'injector.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
 		exit
+	else
+		./injector.sh $file -t $time -r $ratio $( if [ $slowdown -eq 1 ]; then echo "-s"; fi ) &> ./fuzz.log &
+		tail -f ./fuzz.log
 	fi
-	./injector.sh $file -t $time -r $ratio $( if [ $slowdown -eq 1 ]; then echo "-s"; fi ) &> ./fuzz.log &
-	tail -f ./fuzz.log
 }
 
 stop()
@@ -132,14 +134,20 @@ stop()
 
 	if [[ ! -e ./crashclean.sh ]]; then
 		echo "No 'crashclean.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
-		exit
+	else
+		./crashclean.sh 2>&1 | tee -a ./fuzz.log
 	fi
-	./crashclean.sh 2>&1 | tee -a ./fuzz.log
 }
 
 watch()
 {
-	tail -f $wrkdir/fuzz.log
+	pnum=$( ps -ax | grep fuzzycactus | grep -v stop | grep -c -v grep )
+
+	if [ $pnum -eq 0 ]; then
+		echo "No fuzzycactus process running."
+	else
+		tail -f $wrkdir/fuzz.log
+	fi
 }
 
 helper()
