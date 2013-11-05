@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#installs to /private/var/fuzzycactus/ 
+#installs to /private/var/fuzzycactus/
 
 file=$1
 slowdown=0

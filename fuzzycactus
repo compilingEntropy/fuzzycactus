@@ -142,6 +142,7 @@ stop()
 watch()
 {
 	pnum=$( ps -ax | grep fuzzycactus | grep -v stop | grep -c -v grep )
+	sleep 0.1
 	if [ $pnum -le 2 ]; then
 		echo "No fuzzycactus process running."
 	else
