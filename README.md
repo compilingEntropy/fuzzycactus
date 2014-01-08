@@ -3,23 +3,21 @@ fuzzycactus
 
 A tool which automates and simplifies the on-device fuzzing of MobileSafari.
 
-How it works:  
+What it does:  
 This tool can turn anyone's freshly jailbroken device into a fuzzing machine in minutes. All the setup is handled for you.
 
-What it does:  
+How it works:  
 It uses zzuf to take the input file and generate a slightly modified version of it. It then attempts to load that modified file with MobileSafari. It does this repeatedly without any user interaction; the idea is you can start it and when you come back you'll have some crashes to play with.  
-The ./crashclean.sh file is automatically run after every fuzzing session. It will remove uninteresting things like ResetCounter and let you focus on the important stuff. It checks the time of each crash against the log files that are generated when fuzzycactus is running, and pairs each crash with the file that caused it.These pairs are put into the ./Results/ directory. Afterward, all crashes are moved to the ./Crashes/ directory for easy access. It will look at what seeds caused crashes and make note in the ./tested.log file as well, so it's easy to find. These seeds are then given you you in a list.  
-All of this runs on the device itself. No network connection is required during the fuzzing process. You should, however, start and stop the script over ssh (rather than mobileterminal) to avoid confusing the device as it does its work. Once the script is started you can safely disconnect.  
-Part of the way this works involves running a local server on your device. This is useful because if you want to test a juicy file on another device, you can easily connect to your fuzzycactus device over a local network and do so. This is particularly useful for non-jailbroken devices, which can be a little tricky to load files onto.
+fuzzycactus continually pairs crashes with the files that caused them. The paired files and crashes are found in /private/var/fuzzycactus/Results/. Previously, fuzzycactus would inform you if there were crashes that could not be paired with their respective files. This behavior has been depreciated because pairing is now completely reliable. If your device had a kernel panic while fuzzing, fuzzycactus will pair the crash the next time iOS boots. No user actions are required for this to take place.  
+This tool is designed to be run over ssh. Fuzzing is daemonized, so you can safely ctrl+c and disconnect your ssh session without fear of interrupting your fuzzing. If you choose to start this tool via MobileTerminal, stop the script by doing a 'slide-to-power-off' or ssh in and stop normally.
+Part of the way this works involves running a local web-server on your device. This is useful because if you want to test a juicy file on another device, you can easily connect to your fuzzycactus device over a local network and do so. This is particularly useful for non-jailbroken devices, which can be a little tricky to load files onto.
+
+Do not touch your device while it is fuzzing. This can cause false positives with the
+crash-detector or other issues.
 
 Always remember: Before you begin fuzzing, go to 'Settings' > 'General' > 'About' > 'Diagnostics & Usage' and check the "Don't Send" option. Otherwise, all your hard work will go to Apple and you will be sad. =(
 
-Usage:  `fuzzycactus [start/stop/watch/help] /path/to/file.mov [-s] [-t 11] [-r 0.0001:0.001]`  
-To start fuzzing ./file.mov, do:  
-`	fuzzycactus start ./file.mov`  
-To stop fuzzing, do:  
-`	fuzzycactus stop`  
-To view the current fuzzing session, do:  
-`	fuzzycactus watch`  
-For help, do:  
-`	fuzzycactus help`  
+Usage:  
+`fuzzycactus [action] [file] [options]`  
+`fuzzycactus [start/stop/watch/help] [./file.mov] [-s] [-t 11] [-r 0.0001:0.001] [-k]`  
+For more usage information, please do `fuzzycactus help` and read the help text.

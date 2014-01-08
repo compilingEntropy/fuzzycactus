@@ -1,37 +1,181 @@
 #!/bin/bash
 
-#depends on:
-#a file to fuzz
+###
+#
+#fuzzycactus-- A tool which automates and simplifies the on-device fuzzing of MobileSafari
+#View the source for this project on github: https://github.com/compilingEntropy/fuzzycactus
+#Report bugs or ask questions
+#email: compilingEntropy@gmail.com
+#twitter: @compiledEntropy
+#
+#Version 2.0
+#
+#Dependencies:
+#A file to fuzz with
 #zzuf
-#'sbutils' from cydia
-#'bc' from cydia
-#'lighttpd' from cydia
-#'adv-cmds' from cydia
-#'safariresetter' from cydia
-#'cURL' from cydia
-#'wget' from cydia
-#'coreutils' from cydia
+#sbutils
+#bc
+#lighttpd
+#adv-cmds
+#safariresetter
+#cURL
+#wget
+#coreutils
+#
+#Installs to /usr/bin/fuzzycactus
+#Working directory is /private/var/fuzzycactus/
+#
+###
 
-#installs to /usr/bin/
-
-action=$1
-file=$2
-slowdown=0
-time=11
-ratio="0.0001:0.001"
+version="2.0"
+currentpid=$$
+action="$1"
+file="$2"
 params=( $( for arg in $@; do echo "$arg"; done ) )
-usage="Usage: fuzzycactus [start/stop/watch/help] /path/to/file.mov [-s] [-t 11] [-r 0.0001:0.001]"
+usage="Usage: fuzzycactus [action] [file] [options]\nfuzzycactus [start/stop/watch/help] [./file.mov] [-s] [-t 11] [-r 0.0001:0.001] [-k]"
 wrkdir="/private/var/fuzzycactus"
+config="$wrkdir/fuzzycactus.conf"
+launchd="/System/Library/LaunchDaemons/com.compilingentropy.fuzzycactus.plist"
+pidfile="$wrkdir/pid"
 
 if [[ -z "$action" ]]; then
 	echo "You must provide an action."
-	echo "$usage"
+	echo -e "$usage"
 	exit
 fi
 
+#smart functions with built-in checks
+smart_mkdir()
+{
+	if [[ ! -d "$1" ]]; then
+		mkdir -p "$1"
+	fi
+}
+smart_cd()
+{
+	smart_mkdir "$1"
+	cd "$1"
+}
+smart_touch()
+{
+	if [[ ! -e "$1" ]]; then
+		touch "$1"
+	fi
+}
+smart_rm()
+{
+	if [[ -e "$1" ]]; then
+		rm "$1"
+	else
+		echo "$1 does not exist!"
+	fi
+}
+
+#make wrkdir
+smart_mkdir "$wrkdir/"
+
+#pid file
+if [[ -e "$pidfile" ]]; then
+	echo "$currentpid" >> "$pidfile"
+else
+	#generate new pidfile file
+	echo "###
+#
+#This is the fuzzycactus pid file.
+#DO NOT MODIFY THIS FILE!!! PLZ!! 
+#I R OF BEG U #HOLMES
+#
+###
+" > "$pidfile"
+fi
+
+#removes the pid of the current process from the pidfile
+removecurrentpid()
+{
+	if [[ -e "$pidfile" ]]; then
+		sed -i "/$currentpid/d" "$pidfile"
+	else
+		echo "$pidfile does not exist!"
+	fi
+}
+
+#set pattern matching format
+stimeregex="(^stime: [0-9]{2}[\.][0-9]{2}[\.][0-9]{2}[-][0-9]{2}[\.][0-9]{2}[\.][0-9]{2}$)"
+ratioregex="([0]*[\.][0-9]+[:][0]*[\.][0-9]+$)|(^[0]*[\.][0-9]+$)"
+timeregex="([0-9]+$)|(^[0-9]+[\.][0-9]+$)"
+slowdownregex="(^slowdown: [0-1]$)"
+kernelregex="(^kernel: [0-1]$)"
+crashesregex="(^crashes: [0-9]+$)"
+
+#determine whether fuzzycactus is already running
+is_running()
+{
+	isrunning=0
+	if [[ -e "$pidfile" ]]; then
+		if [ $( egrep -c "(^[0-9]+$)" "$pidfile" ) -ge 1 ]; then
+			pidlist=( $( egrep -o "(^[0-9]+$)" "$pidfile" ) )
+			pidlist=( "${pidlist[@]/$currentpid/}" )
+			for pid in "${pidlist[@]}"; do
+				kill -0 "$pid" &> /dev/null; isdead="$?"
+				if [ $isdead -eq 0 ]; then
+					isrunning=1
+				fi
+			done
+		fi
+	else
+		echo "no dont do that"
+	fi
+}
+
+#main start function, runs when 'start' is the given action
 start()
 {
-	#get the time
+	#default values
+	slowdown=0
+	kernel=0
+	time=11
+	ratio="0.0001:0.001"
+
+	crashes=0
+	didpanic=0
+
+	#config file
+	if [[ -e "$config" ]]; then
+		#read values from config
+		if [ $( egrep -c "$stimeregex" "$config" ) -ge 1 ]; then
+			stime=$( egrep "$stimeregex" "$config" | tail -n 1 )
+			didpanic=1
+		fi
+		if [ $( grep "ratio:" "$config" | egrep -c "$ratioregex" ) -ge 1 ]; then
+			ratio=$( grep "ratio:" "$config" | egrep -o "$ratioregex" | tail -n 1 )
+		fi
+		if [ $( egrep "(^time: )" "$config" | egrep -c "$timeregex" ) -ge 1 ]; then
+			time=$( egrep "(^time: )" "$config" | egrep -o "$timeregex" | tail -n 1 )
+		fi
+		if [ $( egrep -c "$slowdownregex" "$config" ) -ge 1 ]; then
+			slowdown=$( egrep "$slowdownregex" "$config" | tail -n 1 | egrep -o "([0-1])" )
+		fi
+		if [ $( egrep -c "$kernelregex" "$config" ) -ge 1 ]; then
+			kernel=$( egrep "$kernelregex" "$config" | tail -n 1 | egrep -o "([0-1])" )
+		fi
+		if [ $( egrep -c "$crashesregex" "$config" ) -ge 1 ]; then
+			crashes=$( egrep "$crashesregex" "$config" | tail -n 1 | egrep -o "([0-9]+)" )
+		fi
+	else
+		#generate new config file
+		echo "###
+#
+#This is the fuzzycactus config file.
+#The values stored here will be used when fuzzycactus starts.
+#They will be kept up-to-date with the most recent settings used by fuzzycactus.
+#This is so fuzzycactus can resume its work after a kernel panic.
+#It is not recommended that you modify this file, use fuzzycactus' options instead.
+#
+###
+" > "$config"
+	fi
+
+	#parse options
 	i=0
 	for arg in "${params[@]}"; do
 		if [[ "$arg" == "-t" ]]; then
@@ -42,36 +186,64 @@ start()
 		fi
 		if [[ "$arg" == "-s" ]]; then
 			slowdown=1
+		fi		
+		if [[ "$arg" == "-k" ]]; then
+			kernel=1
 		fi
 		((i++))
 	done
 
 	#check the time
-	if [ $( echo $time | egrep -c "(^[0-9]+$)|(^[0-9]+[\.][0-9]+$)" ) -eq 0 ]; then
+	if [ $( echo "$time" | egrep -c "$timeregex" ) -eq 0 ]; then
 		echo "The time provided isn't valid."
 		echo "Please provide a new time."
-		echo "$usage"
+		echo -e "$usage"
+		removecurrentpid
 		exit
 	fi
 
 	#check the ratio
-	if [ $( echo $ratio | egrep -c "(^[0]*[\.][0-9]+[:][0]*[\.][0-9]+$)|(^[0]*[\.][0-9]+$)" ) -eq 0 ]; then
+	if [ $( echo $ratio | egrep -c "$ratioregex" ) -eq 0 ]; then
 		echo "The ratio provided isn't valid."
 		echo "Please provide a new ratio."
-		echo "$usage"
+		echo -e "$usage"
+		removecurrentpid
 		exit
 	fi
 	range=( $( echo $ratio | sed "s|:| |g" ) )
 	if [[ -n "${range[1]}" ]]; then
-		if [ $(echo "${range[0]} > ${range[1]}" | bc) -eq 1 ]; then
+		if [ $( echo "${range[0]} > ${range[1]}" | bc ) -eq 1 ]; then
 			echo "The ratio provided isn't valid."
 			echo "The first ratio argument must be smaller than the second ratio argument."
 			echo "Please provide a new ratio."
-			echo "$usage"
+			echo -e "$usage"
+			removecurrentpid
 			exit
-		elif [ $(echo "${range[0]} == ${range[1]}" | bc) -eq 1 ]; then
+		elif [ $( echo "${range[0]} == ${range[1]}" | bc ) -eq 1 ]; then
 			ratio="${range[0]}"
 		fi
+	fi
+
+	#write values to config
+	if [ $( grep "ratio:" "$config" | egrep -c "$ratioregex" ) -ge 1 ]; then
+		sed -i "s|$( grep "ratio:" "$config" | egrep "$ratioregex" | tail -n 1 )|ratio: $ratio|g" "$config"
+	else
+		echo "ratio: $ratio" >> "$config"
+	fi
+	if [ $( egrep "(^time: )" "$config" | egrep -c "$timeregex" ) -ge 1 ]; then
+		sed -i "s|$( egrep "(^time: )" "$config" | egrep "$timeregex" | tail -n 1 )|time: $time|g" "$config"
+	else
+		echo "time: $time" >> "$config"
+	fi
+	if [ $( egrep -c "$slowdownregex" "$config" ) -ge 1 ]; then
+		sed -i "s|$( egrep "$slowdownregex" "$config" | tail -n 1 )|slowdown: $slowdown|g" "$config"
+	else
+		echo "slowdown: $slowdown" >> "$config"
+	fi
+	if [ $( egrep -c "$kernelregex" "$config" ) -ge 1 ]; then
+		sed -i "s|$( egrep "$kernelregex" "$config" | tail -n 1 )|kernel: $kernel|g" "$config"
+	else
+		echo "kernel: $kernel" >> "$config"
 	fi
 
 	#relative paths
@@ -85,141 +257,701 @@ start()
 	if [[ ! -e "$file" ]]; then
 		echo "The provided file does not exist."
 		echo "Please check your path and try again."
+		removecurrentpid
 		exit
 	fi
 
-	cd $wrkdir/
-
-	if [[ ! -e ./checks.sh ]]; then
-		echo "No 'checks.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
-		exit
-	fi
-
-	./checks.sh
-	if [ $? -ne 2 ]; then
-		exit
-	fi
-
-	if [[ ! -e ./crashclean.sh ]]; then
-		echo "No 'crashclean.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
-		exit
-	else
-		./crashclean.sh 2>&1 | tee -a ./fuzz.log
-	fi
-
-	if [[ ! -e ./injector.sh ]]; then
-		echo "No 'injector.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
-		exit
-	else
-		./injector.sh $file -t $time -r $ratio $( if [ $slowdown -eq 1 ]; then echo "-s"; fi ) &> ./fuzz.log &
-		tail -f ./fuzz.log
-	fi
-}
-
-stop()
-{
-	cd $wrkdir/
-	pnum=$( ps -ax | grep fuzzycactus | grep -v stop | grep -c -v grep )
-
-	if [ $pnum -eq 0 ]; then
-		echo "No fuzzycactus process running."
-	else
-		while [ $pnum -ge 1 ]; do
-			kill "$( fuzz=( $( ps -ax | grep fuzzycactus | grep -v stop | grep -v grep ) ) && echo ${fuzz[0]} )" &> /dev/null
-			echo "Stopped."
-			((pnum--))
-			sleep 0.5
+	#determine file extension, warn if none is found
+	extension=$( echo $file | sed 's|.*\.||g' | tr '[:upper:]' '[:lower:]' )
+	if [[ -z "$extension" ]]; then
+		echo "Warning:"
+		echo "No file extension found on input file!"
+		echo "This can confuse MobileSafari's file handler, it is recommended that you add a file extension to your file."
+		while(true)
+		do
+			echo "Would you like to continue anyway? (y/n)"
+			read answer
+			if [[ "$answer" == "n" ]]; then
+				removecurrentpid
+				exit
+			elif [[ "$answer" == "y" ]]; then
+				echo "Continuing..."
+				break
+			else
+				echo "Not a valid reponse; valid responses are 'y', or 'n'."
+			fi		
 		done
 	fi
 
-	if [[ ! -e ./crashclean.sh ]]; then
-		echo "No 'crashclean.sh' file found, please re-download from http://github.com/compilingEntropy/fuzzycactus."
-	else
-		./crashclean.sh 2>&1 | tee -a ./fuzz.log
+	smart_cd "$wrkdir/"
+
+	#makes sure everything is ready to go
+	checks()
+	{
+		#make files / directories
+		for dir in "${crashdirs[@]}"; do
+			smart_mkdir "$dir/"
+		done
+		smart_mkdir "/private/var/log/lighttpd/"
+		smart_mkdir "/private/var/www/files/"
+		smart_touch "./fuzz.log"
+		smart_touch "./tested.log"
+
+		#dependency list
+		installpkgs="apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils"
+		install()
+		{
+		             apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils
+		}
+
+		#check dependencies
+		depends=( "com.innoying.sbutils" "bc" "lighttpd" "adv-cmds" "com.cameronfarzaneh.safariresetter" "curl" "wget" "coreutils" "zzuf" )
+		checkdepends()
+		{
+			hasdepends=1
+			haszzuf=1
+			for item in "${depends[@]}"; do
+				if [[ "$item" == "coreutils" ]]; then
+					amount=2
+				else
+					amount=1
+				fi
+				if [ $( dpkg -l | grep -c $item ) -lt $amount ]; then
+					echo "Missing '$item'"'!'
+					hasdepends=0
+					if [[ $item == "zzuf" ]]; then
+						haszzuf=0
+					fi
+				fi
+			done
+		}
+		checkdepends
+
+		#not all dependencies exist, try to get them
+		if [[ $hasdepends -eq 0 ]]; then
+			echo "Not all dependencies were met."
+			while(true)
+			do
+				echo "Would you like me to try installing them? (y/n)"
+				read answer
+				if [[ "$answer" == "n" ]]; then
+						echo "To install most of the dependencies required, run the following as root:"
+						echo "$installpkgs"
+						echo "If you're missing zzuf, get it at 'https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb'."
+						return 1
+				elif [[ "$answer" == "y" ]]; then
+					if [[ ! -e /usr/bin/whoami ]]; then
+						echo "Because you don't have coreutils, I can't tell if you're running this script as root."
+						while (true);
+						do
+							echo "Are you running this script as root? (y/n)"
+							echo "(If you aren't, the installation of missing dependencies will fail.)"
+							read answer
+							if [[ "$answer" == "n" ]]; then
+									isroot=0
+									break
+							elif [[ "$answer" == "y" ]]; then
+									isroot=2
+									break
+							else
+									echo "Not a valid reponse; valid responses are 'y', or 'n'."
+							fi
+						done
+					elif [[ "$( whoami )" == "root" ]]; then
+						isroot=1
+					else
+						isroot=0
+					fi
+
+					if [ $isroot -ge 1 ]; then
+						if [[ $( dpkg -l | grep apt7 | grep tool | grep -c Debian ) -eq 1 ]]; then
+							echo "Installing required dependencies..."
+							install
+							if [ $haszzuf -eq 0 ]; then
+								wget https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb --no-check-certificate
+								dpkg -i ./zzuf_0.13-1_iphoneos-arm.deb
+								if [ $( dpkg -l | grep -c zzuf ) -ne 1 ]; then
+									echo "Something went wrong with the install, please install zzuf manually or try again."
+									return 1
+								else
+									rm ./zzuf_0.13-1_iphoneos-arm.deb
+								fi
+							fi
+							checkdepends
+							if [ $hasdepends -eq 1 ]; then
+								break
+							else
+								echo "Something went wrong with the install, please install the dependencies you're missing manually or try again."
+								if [[ $isroot -eq 2 ]]; then
+									echo "Sounds like you weren't actually root, please run this script again as root or complete setup manually."
+								fi
+							fi
+						else
+							echo "This script was unable to set up the required dependencies for you because you don't have apt7 installed."
+							echo "Install 'APT 0.7 Strict' from Cydia, and try again."
+						fi
+					else
+						echo "This script was unable to set up the required dependencies for you because you're not running this script as root."
+						echo "Try running this script again as root, or complete the installation of missing dependencies manually."
+					fi
+					echo "To install most of the dependencies required, run the following as root:"
+					echo "apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils"
+					echo "If you're missing zzuf, you can get it here: https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb."
+					return 1
+				else
+				echo "Not a valid reponse; valid responses are 'y', or 'n'."
+				fi
+			done
+		fi
+
+		#check for server config
+		if [[ ! -e /private/etc/lighttpd.conf ]]; then
+			echo "No lighttpd.conf file found in /private/etc/!"
+			while (true);
+			do
+				echo "Would you like me to set one up for you? (y/n)"
+				read answer
+				if [[ "$answer" == "n" ]]; then
+						echo "You'll need to set one up yourself then, see https://ghostbin.com/paste/suk7q for an example."
+						return 1
+				elif [[ "$answer" == "y" ]]; then
+						echo "Setting up..."
+						curl -# http://ghostbin.com/paste/suk7q/raw > /private/etc/lighttpd.conf
+						sed -i 's|\r$||' /private/etc/lighttpd.conf
+						if [[ ! -e /private/etc/lighttpd.conf ]]; then
+							echo "Something went wrong while setting up the file, please set one up manually or try again."
+							echo "See https://ghostbin.com/paste/suk7q for an example."
+							return 1
+						fi
+						echo "Done"
+						break
+				else
+						echo "Not a valid reponse; valid responses are 'y', or 'n'."
+				fi
+			done
+		fi
+
+		#check document-root in server config
+		if [[ "$( grep server.document-root /private/etc/lighttpd.conf )" != 'server.document-root = "/var/www/" '* && "$( grep server.document-root /private/etc/lighttpd.conf )" != $( echo -e "server.document-root = \"/var/www/\"\n" ) ]]; then
+			echo "You must have your document root set up in /private/var/www/"
+			echo "Please modify your /private/etc/lighttpd.conf file accordingly."
+			return 1
+		fi
+
+		#check server port is 80
+		if [[ "$( grep server.port /private/etc/lighttpd.conf )" != "server.port = 80 "* && "$( grep server.port /private/etc/lighttpd.conf )" != $( echo -e "server.port = 80\n" ) ]]; then
+			echo "You must have your server port set to 80."
+			echo "Please modify your /private/etc/lighttpd.conf file accordingly."
+			return 1
+		fi
+
+		#start server
+		if [[ $( ps -ax | grep lighttpd | grep -c -v grep ) -lt 1 ]]; then
+			echo "No server running, attempting to start server..."
+			lighttpd -f /etc/lighttpd.conf
+
+			timeout="5"
+			counter="0.3"
+			exitstatus="1"
+
+			echo -n "Starting server.."
+			while (( $( echo ""$timeout" >= "$counter"" | bc ) == 1 && $exitstatus != 0 )); do
+				sleep 0.3
+				echo -n "."
+				curl -# 127.0.0.1 &> /dev/null; exitstatus="$?"
+				counter=$( bc <<< "scale=1;$counter+ 0.3" )
+			done
+			if [ $exitstatus -eq 0 ]; then
+				echo "Server started."
+			else
+				echo "Still no server running."
+				return 1
+			fi
+		fi
+
+		#neuter crash reporting
+		if [ $( grep -c '^127.0.0.1       iphonesubmissions.apple.com$' /private/etc/hosts ) -lt 1 ]; then
+			if [[ "$( whoami )" != "root" ]]; then
+				echo "Run this script again with root access (this is only required once)."
+				return 1
+			else
+				echo "
+#Begin fuzzycactus
+127.0.0.1       iphonesubmissions.apple.com
+#End fuzzycactus" >> /private/etc/hosts
+			fi
+		fi
+
+		#check to see if fuzzycactus is already running
+		is_running
+		if [ $isrunning -eq 1 ]; then
+			echo "fuzzycactus is already running!"
+			echo "Do 'fuzzycactus watch' to attach to the current process."
+			echo "Do 'fuzzycactus stop' to end the current fuzzing session."
+			return 1
+		fi
+
+		return 2
+	}
+
+	#run 'checks', exit if the checks fail
+	checks
+	if [ $? -ne 2 ]; then
+		removecurrentpid
+		exit
 	fi
+
+	###define some functions we'll need later
+	#pull times out of the crash files
+	getcrashtime()
+	{
+		date=( "$( grep 'Date' $1 )" )
+		crashyear="${date[1]:2:2}"
+		crashmonth="${date[1]:5:2}"
+		crashday="${date[1]:8:2}"
+		crashhour="${date[2]:0:2}"
+		crashminute="${date[2]:3:2}"
+		crashsecond="${date[2]:6:2}"
+	}
+
+	#sets a point in time before the file is fuzzed
+	setstime()
+	{
+		if [[ -z "$stime" ]]; then
+			stime="$( date '+%y.%m.%d-%H.%M.%S' )"
+			if [ $( egrep -c "$stimeregex" "$config" ) -ge 1 ]; then
+				sed -i "s|$( egrep "$stimeregex" "$config" | tail -n 1 )|stime: $stime|g" "$config"
+			else
+				echo "stime: $stime" >> "$config"
+			fi
+		fi
+		stimearray=( $( echo "$stime" | egrep -o "([0-9]{2})" ) )
+		syear="${stimearray[0]}"
+		smonth="${stimearray[1]}"
+		sday="${stimearray[2]}"
+		shour="${stimearray[3]}"
+		sminute="${stimearray[4]}"
+		ssecond="${stimearray[5]}"
+		unset stime
+	}
+
+	#determines if a crash has happened since a given time
+	comparetimes()
+	{
+		if [ $crashyear -eq $syear ]; then
+			
+			if [ $crashmonth -eq $smonth ]; then
+				
+				if [ $crashday -eq $sday ]; then
+					
+					if [ $crashhour -eq $shour ]; then
+
+						if [ $crashminute -eq $sminute ]; then
+							
+							if [ $crashsecond -ge $ssecond ]; then
+								foundit
+							fi
+
+						elif [ $crashminute -gt $sminute ]; then
+							foundit
+						fi
+
+					elif [ $crashhour -gt $shour ]; then
+						foundit
+					fi
+
+				elif [ $crashday -gt $sday ]; then
+					foundit
+				fi
+
+			elif [ $crashmonth -gt $smonth ]; then
+				foundit
+			fi
+
+		elif [ $crashyear -gt $syear ]; then
+			foundit
+		fi
+	}
+
+	#do this once you find what crashlog goes with the file
+	foundit()
+	{
+		crashtype=$( echo "$crash" | sed 's|_.*||g' | sed 's|-.*||g' ) #type of crash determined by whatever comes before '-' or '_' in crash name
+		
+		#create directory if it does not exist, and copy files to that directory
+		smart_mkdir "$wrkdir"/Results/"$crashtype"_"$seed"/
+		smart_mkdir "$wrkdir/Crashes/Panics/"
+		cp "$dir"/"$crash" "$wrkdir"/Crashes/
+		mv "$dir"/"$crash" "$wrkdir"/Results/"$crashtype"_"$seed"/
+		mv /private/var/www/files/"$seed"."$extension" "$wrkdir"/Results/"$crashtype"_"$seed"/
+
+		echo "Moved $crash"
+		sed -i -r "s|~$seed .*|&\*|g" ./tested.log
+
+		#increment $crashes and write to config
+		((crashes++))
+		if [ $( egrep -c "$crashesregex" "$config" ) -ge 1 ]; then
+			sed -i "s|$( egrep "$crashesregex" "$config" | tail -n 1 )|crashes: $crashes|g" "$config"
+		else
+			echo "crashes: $crashes" >> "$config"
+		fi
+	}
+
+	#do this if the file crashed something
+	crashed()
+	{	
+		for dir in "${crashdirs[@]}"; do
+			smart_cd "$dir/"
+			#Remove Duplicates
+			if [ $( ls ./ | grep -c "Latest" ) -ge 1 ]; then
+				smart_rm "./Latest*.plist"
+			fi
+			#Fix for iOS7 crashes
+			for crash in *.synced; do
+				if [ -e "$crash" ]; then
+					if [ $( echo "$crash" | grep -c ".synced" ) -ge 1 ]; then
+						mv "$dir/$crash" "$dir/$( echo $crash | sed 's|.synced||g' )"
+					fi
+				fi
+			done
+			#Move all crashes to directory with solved file
+			for crash in *.plist; do
+				if [ -e "$crash" ]; then
+					getcrashtime "$crash"
+					comparetimes
+				fi
+			done
+		done
+		smart_cd "$wrkdir/"
+	}
+
+	injector()
+	{
+		j=1
+		cp "$file" ./file."$extension" &> /dev/null
+
+		#may not be necessary, but the idea is that as your device slows down from testing more files, it will add to the sleep time
+		slowdown()
+		{
+			let j+=1
+			if [ $j -ge 25 ]; then
+				time=$( bc <<< "scale=1;$time+ 0.1" )
+				j=1
+				echo "Time incremented"
+				killall mediaserverd
+			fi
+		}
+
+		#counts the number of both regular crashes, and panics
+		crashcount()
+		{
+			crashcount=$( ls $crashroot/ | grep -c plist )
+			let crashcount+=$( ls $precrashroot/ | grep -c plist )
+			paniccount=$( ls $crashpanics/ | grep -c plist )
+			let paniccount+=$( ls $precrashpanics/ | grep -c plist )
+		}
+
+		#generates files and injects them into mobilesafari
+		inject()
+		{
+			echo "~$seed $( date '+%y.%m.%d-%H.%M.%S' )"
+			zzuf -c -r $ratio -s $seed < $file > /private/var/www/files/"$seed"."$extension"
+			echo "File generated"
+			sbopenurl http://127.0.0.1/files/"$seed"."$extension"
+			echo "Safari opened"
+			sleep $time
+			resetsafari
+			if [ $slowdown -eq 1 ]; then
+				slowdown
+			fi
+			echo "~$seed $( date '+%y.%m.%d-%H.%M.%S' )" >> ./tested.log
+		}
+
+		#installs launch daemon so that we can recover from any potential panics
+		install_recovery()
+		{
+			if [[ ! -e "$launchd" ]]; then
+				plutil -create "$launchd" &> /dev/null
+				plutil -AbandonProcessGroup -true "$launchd" &> /dev/null
+				plutil -Label -string com.compilingentropy.fuzzycactus "$launchd" &> /dev/null
+				plutil -ProcessType -string Interactive "$launchd" &> /dev/null
+				plutil -ProgramArguments -array "$launchd" &> /dev/null
+				plutil -key ProgramArguments -arrayadd -value /usr/bin/fuzzycactus "$launchd" &> /dev/null
+				plutil -key ProgramArguments -arrayadd -value start "$launchd" &> /dev/null
+				plutil -key ProgramArguments -arrayadd -value file "$launchd" &> /dev/null
+				plutil -RunAtLoad -true "$launchd" &> /dev/null
+			fi
+			sed -i "s|<string>file</string>|<string>$file</string>|g" "$launchd"
+		}
+
+		#main injector routine
+		install_recovery
+		for (( i = $seed; i < 10000; i++ )); do
+			seed="$i"
+			if [ $( grep -c "~$seed " ./tested.log ) -lt 1 ]; then
+
+				setstime
+
+				crashcount
+				before=$crashcount
+
+				inject
+
+				crashcount
+				after=$crashcount
+
+				if [ $after -gt $before ]; then
+					echo "Crashed!"
+
+					crashed
+
+				else
+
+					smart_rm /private/var/www/files/"$seed"."$extension"
+
+				fi
+
+			else
+				echo "Skipping $seed"
+			fi
+		done
+
+		echo "Done!"
+		fuzzycactus stop
+
+	}
+
+	#determine what $seed was
+	if [ $( egrep -c "([~][0-9]+)" ./tested.log ) -ge 1 ]; then
+		seed=$( egrep -o "([~][0-9]+)" ./tested.log | tail -n 1 | egrep -o "([0-9]+)" )
+	else
+		seed=1
+	fi
+
+	#recover from kpanic
+	if [ $didpanic -eq 1 ]; then
+		echo "Recovering from unexpected termination..."
+
+		setstime
+
+		crashed
+
+		echo "Recovered successfully."
+		if [ $kernel = 0 ]; then
+			removecurrentpid
+			fuzzycactus stop
+			exit
+		else
+			echo "Resuming fuzzing session."
+		fi
+
+	fi
+
+	#run the file injector in the background, store its pid to the pidfile
+	injector &> "./fuzz.log" &
+	injectorpid=$!
+
+	echo "$injectorpid" >> "$pidfile"
+
+	#watch it go
+	tail -f "./fuzz.log"
 }
 
+#main stop function, runs when 'stop' is the given action
+stop()
+{
+	smart_cd "$wrkdir/"
+
+	crashes=0
+	if [ $( egrep -c "$crashesregex" "$config" ) -ge 1 ]; then
+		crashes=$( egrep "$crashesregex" "$config" | tail -n 1 | egrep -o "([0-9]+)" )
+	fi
+
+	if [[ -e "$config" ]]; then	
+		#remove stime from config
+		if [ $( egrep -c "$stimeregex" "$config" ) -ge 1 ]; then
+			sed -i -r "/$stimeregex/d" "$config"
+		fi
+
+		#remove crash count from config
+		if [ $( egrep -c "$crashesregex" "$config" ) -ge 1 ]; then
+			sed -i -r "/$crashesregex/d" "$config"
+		fi
+
+		#set kernel=0 in config
+		if [ $( egrep -c "$kernelregex" "$config" ) -ge 1 ]; then
+			sed -i -r "/$kernelregex/d" "$config"
+			echo "kernel: 0" >> "$config"
+		fi
+	fi
+
+	#remove launchdaemon
+	if [[ -e "$launchd" ]]; then
+		unload -w com.compilingentropy.fuzzycactus &> /dev/null
+		smart_rm "$launchd"
+	fi
+
+	#clean up for new fuzzing session
+	if [[ -e "./fuzz.log" ]]; then
+		echo "Number of crashes: $crashes" | tee -a ./fuzz.log
+		if [ $( cat ./fuzz.log | wc -l ) -ge 1 ]; then
+			smart_mkdir "./logs/"
+			mv "./fuzz.log" "./logs/$( date '+%y.%m.%d-%H.%M.%S' ).log"
+		fi
+	fi
+
+	#end processes
+	removecurrentpid
+	if [[ -e "$pidfile" ]]; then
+		if [ $( egrep -c "(^[0-9]+$)" "$pidfile" ) -ge 1 ]; then
+			while [ $( egrep -c "(^[0-9]+$)" "$pidfile" ) -ge 1 ]; do
+				pid=$( egrep -o "(^[0-9]+$)" "$pidfile" | head -n 1 )
+				kill -- -$( ps opgid= "$pid" | tr -d ' ' ) &> /dev/null
+				sed -i "/$pid/d" "$pidfile"
+			done
+			echo "All fuzzycactus processes ended."
+		else
+			echo "No fuzzycactus process running."
+		fi
+	else
+		echo "no dont do that"
+	fi
+
+	smart_rm "$pidfile"
+}
+
+#main watch function, runs when 'watch' is the given action
 watch()
 {
-	pnum=$( ps -ax | grep fuzzycactus | grep -v stop | grep -c -v grep )
-	sleep 0.1
-	if [ $pnum -le 2 ]; then
-		echo "No fuzzycactus process running."
+	#detect whether fuzzycactus process is running
+	is_running
+	if [ $isrunning -eq 1 ]; then
+		tail -f "$wrkdir/fuzz.log"
 	else
-		tail -f $wrkdir/fuzz.log
+		echo "No fuzzycactus process running."
 	fi
 }
 
+#main help function, runs when 'help' is the given action
+#prints detailed information
 helper()
 {
-	echo "$usage"
-	echo ""
-	echo "To start fuzzing ./file.mov, do:"
-	echo "	fuzzycactus start ./file.mov"
-	echo "To stop fuzzing, do:"
-	echo "	fuzzycactus stop"
-	echo "To view the current fuzzing session, do:"
-	echo "	fuzzycactus watch"
-	echo "For help, do:"
-	echo "	fuzzycactus help"
-	echo ""
-	echo "Options:"
-	echo "-t (time)     Allows you to change the time between each reset of MobileSafari"
-	echo "-t 11         This is useful because it takes longer for a .mov file to load than for a .jpg for example."
-	echo "              The default time used is 11, which works well for a 1 second .mov file."
-	echo "-s (slowdown) Allows you to control whether or not the time between resets will grow slowly over time."
-	echo "              This is useful because things like mediaserverd can get messy after a while and cause MobileSafari to take longer to load the file."
-	echo "              I recommend turning this setting on for fuzzing anything that gets parsed by mediaserverd, such as a .mov file."
-	echo "              This option is off by default."
-	echo "-r (ratio)    Allows you to change the percent of the file that gets modified."
-	echo "-r 0.001:0.1  If your ratio is 0.004, 0.4% of the file will be randomly modified."
-	echo "              You'll want to turn up the ratio if your file is parsed correctly most of the time,"
-	echo "              or turn it down if your file is rarely parsed correctly."
-	echo "              This can be a static ratio, such as 0.004, or a range of values, such as 0.0001:0.001."
-	echo "              If you provide a range, the ratio used will be any randomly determined value within that range."
-	echo "              The default ratio is 0.0001:0.001. I have found this to be effective for many filetypes and files that are relatively small."
-	echo ""
-	echo "-----"
-	echo "The working directory for fuzzycactus is $wrkdir/."
-	echo "In this directory you will find the tools that make up fuzzycactus, as well as the results of your fuzzing session."
-	echo "All crashes found are placed in $wrkdir/Crashes/ for you to inspect."
-	echo ""
-	echo "fuzzycactus attempts to pair crashes with the files that caused them."
-	echo "The paired files and crashes are found in $wrkdir/Results/."
-	echo "You will be notified if there are crashes that cannot be paired with files that caused them so that you can pair them manually."
-	echo "If your device had a kernel panic while fuzzing, you can either start a new fuzzing session or run 'fuzzycactus stop' in order to pair the crashes."
-	echo ""
-	echo "This tool is designed to be run over ssh."
-	echo "Fuzzing is daemonized, so you can safely ctrl+c and disconnect your ssh session without fear of interrupting your fuzzing."
-	echo "If you choose to start this tool via mobileterminal, stop the script by doing a 'slide-to-power-off' or ssh in and do 'fuzzycactus stop'."
-	echo ""
-	echo "Important notices:"
-	echo "Do not touch your device while it is fuzzing. This can cause false positives with the crash-detector or other issues."
-	echo "Before you begin fuzzing, always ensure that your device is configured not to send diagnostics and usage to Apple."
-	echo 'This setting can be changed in "Settings" > "General" > "About" > "Diagnostics & Usage". '"Enable the \"Don't send\" option."
+	echo "fuzzycactus version: $version"
+	echo -e "$usage"
+	cat <<EOF
+
+-----
+Actions:
+start         -Begins a new fuzzing session. This action requires you to provide a file, options
+              are optional. Fuzzing will automatically background itself, so it's safe to
+              disconnect from your ssh session or ctrl+c after fuzzing starts. As crashes happen,
+              they are paired automatically with the files that caused them. These file pairs are
+              then placed in '$wrkdir/Results/' for later analysis.
+stop          -Stops the current fuzzing session, if one is running, and displays the number of
+              crashes that were found during that session. This action takes no files or options.
+watch         -Attatches to the current fuzzing session, if one is running. This is essentially the
+              equivalent of doing 'tail -f $wrkdir/fuzz.log'. This action takes
+              no files or options.
+help          -Displays this help message. This action takes no files or options.
+
+Options:
+-t (time)     -Changes the time between each reset of MobileSafari. This is useful because it takes
+-t 11         longer for a .mov file to load than a .jpg, for example. The default time used is 11,
+              which works well for most pictures and documents. It also works well for video files
+              which are about 1 second long.
+-s (slowdown) -Controls whether or not the time between resets (-t) will grow slowly over time.
+              This is useful because things like mediaserverd can get messy after being fuzzed for
+              a while, causing MobileSafari to take much longer to load the file. I recommend using
+              this option whenever you're fuzzing with anything that gets parsed by mediaserverd,
+              such as video or sound files. This option is off by default, and takes no parameters.
+-r (ratio)    -Changes the percent of the file that gets modified. If your ratio is 0.004, 0.4% of
+-r 0.01:0.1   the file will be randomly modified. You'll want to turn up the ratio if your file is
+              parsed correctly most of the time, or turn it down if your file is rarely parsed 
+              correctly. This can be a static ratio, such as 0.004, or a range of values, such as
+              0.0001:0.001. If you provide a range, the ratio used will be any randomly determined
+              value within that range. The default ratio is 0.0001:0.001. I have found this range
+              to be effective for many filetypes, using files that are relatively small.
+-k (kernel)   -Controls whether or not fuzzing will automatically resume upon reboot in the event
+              of a kernel panic. Enabling this option will tell a LaunchDaemon to start fuzzycactus
+              again when the device reboots. Regardless of whether this option is set, a
+              LaunchDaemon will be temporarily installed to ensure that kernel panics' crash logs
+              are paired with the files that caused them when iOS recovers. This option is off by
+              default, and takes no parameters.
+
+Examples:
+Start fuzzing ./file.mov:
+	~$ fuzzycactus start ./file.mov
+
+Start fuzzing ./file.mov, resume fuzzing if there's a panic, account for slowdown:
+	~$ fuzzycactus start /var/fuzzycactus/file.mov -k -s
+
+Start fuzzing a large pdf:
+	~$ fuzzycactus start ./file.pdf -t 15 -r 0.001:0.01
+
+Stop fuzzing:
+	~$ fuzzycactus stop
+
+View the current fuzzing session:
+	~$ fuzzycactus watch
+
+Display help:
+	~$ fuzzycactus help
+
+-----
+General Information:
+The working directory for fuzzycactus is $wrkdir/. In this directory you will find the results of
+your fuzzing session, as well as a copy of the file you used to fuzz. All crashes found are placed
+in $wrkdir/Crashes/ for you to inspect.
+
+fuzzycactus pairs crashes with the files that caused them. The paired files and crashes are found
+in $wrkdir/Results/. Previously, fuzzycactus would inform you if there were crashes that could not
+be paired with their respective files. This behavior has been depreciated because pairing is now
+completely reliable. If your device had a kernel panic while fuzzing, fuzzycactus will pair the
+crash the next time iOS boots. No user actions are required for this to take place.
+
+This tool is designed to be run over ssh. Fuzzing is daemonized, so you can safely ctrl+c and
+disconnect your ssh session without fear of interrupting your fuzzing. If you choose to start this
+tool via MobileTerminal, stop the script by doing a 'slide-to-power-off' or ssh in and do
+'fuzzycactus stop'.
+
+Important Notices:
+Do not touch your device while it is fuzzing. This can cause false positives with the
+crash-detector or other issues. Before you begin fuzzing, always ensure that your device is
+configured not to send diagnostics and usage to Apple. This setting can be changed in
+"Settings" > "General" > "About" > "Diagnostics & Usage". Enable the "Don't send" option.
+
+Please report bugs!
+email: compilingEntropy@gmail.com
+twitter: @compiledEntropy
+
+EOF
 }
 
 
+#looks at the given action and acts appropriately
 if [[ "$action" == "start" ]]; then
 	if [[ -n "$file" ]]; then
 		start
-		exit
 	else
 		echo "You must provide a file."
-		echo "$usage"
-		exit
+		echo -e "$usage"
 	fi
+	removecurrentpid
+	exit
 elif [[ "$action" == "stop" ]]; then
 	stop
 	exit
 elif [[ "$action" == "watch" ]]; then
 	watch
+	removecurrentpid
 	exit
 elif [[ "$action" == "help" ]]; then
 	helper
+	removecurrentpid
 	exit
 else
-	echo 'Not a valid action! Allowed actions are: "start", "stop", and "help".'
-	echo "$usage"
+	echo 'Not a valid action! Allowed actions are: "start", "stop", "watch", and "help".'
+	echo -e "$usage"
+	removecurrentpid
 	exit
 fi
