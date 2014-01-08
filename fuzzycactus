@@ -899,15 +899,16 @@ Display help:
 
 -----
 General Information:
-The working directory for fuzzycactus is $wrkdir/. In this directory you will find the results of
-your fuzzing session, as well as a copy of the file you used to fuzz. All crashes found are placed
-in $wrkdir/Crashes/ for you to inspect.
+The working directory for fuzzycactus is $wrkdir/. In this directory you will find
+the results of your fuzzing session, as well as a copy of the file you used to fuzz. All crashes
+found are placed in $wrkdir/Crashes/ for you to inspect.
 
 fuzzycactus pairs crashes with the files that caused them. The paired files and crashes are found
-in $wrkdir/Results/. Previously, fuzzycactus would inform you if there were crashes that could not
-be paired with their respective files. This behavior has been depreciated because pairing is now
-completely reliable. If your device had a kernel panic while fuzzing, fuzzycactus will pair the
-crash the next time iOS boots. No user actions are required for this to take place.
+in $wrkdir/Results/. Previously, fuzzycactus would inform you if there were
+crashes that could not be paired with their respective files. This behavior has been depreciated
+because pairing is now completely reliable. If your device had a kernel panic while fuzzing,
+fuzzycactus will pair the crash the next time iOS boots. No user actions are required for this to
+take place.
 
 This tool is designed to be run over ssh. Fuzzing is daemonized, so you can safely ctrl+c and
 disconnect your ssh session without fear of interrupting your fuzzing. If you choose to start this
