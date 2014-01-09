@@ -8,7 +8,7 @@
 #email: compilingEntropy@gmail.com
 #twitter: @compiledEntropy
 #
-#Version 2.0.1
+#Version 2.0.2
 #
 #Dependencies:
 #A file to fuzz with
@@ -27,7 +27,7 @@
 #
 ###
 
-version="2.0.1"
+version="2.0.2"
 currentpid=$$
 action="$1"
 file="$2"
@@ -66,8 +66,6 @@ smart_rm()
 {
 	if [[ -e "$1" ]]; then
 		rm "$1"
-	else
-		echo "$1 does not exist!"
 	fi
 }
 
@@ -138,8 +136,10 @@ is_running()
 readcrashes()
 {
 	crashes=0
-	if [ $( egrep -c "$crashesregex" "$config" ) -ge 1 ]; then
-		crashes=$( egrep "$crashesregex" "$config" | tail -n 1 | egrep -o "([0-9]+)" )
+	if [[ -e "$config" ]]; then
+		if [ $( egrep -c "$crashesregex" "$config" ) -ge 1 ]; then
+			crashes=$( egrep "$crashesregex" "$config" | tail -n 1 | egrep -o "([0-9]+)" )
+		fi
 	fi
 }
 
