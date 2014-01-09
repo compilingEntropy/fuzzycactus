@@ -8,7 +8,7 @@
 #email: compilingEntropy@gmail.com
 #twitter: @compiledEntropy
 #
-#Version 2.0.2
+#Version 2.0.3
 #
 #Dependencies:
 #A file to fuzz with
@@ -27,7 +27,7 @@
 #
 ###
 
-version="2.0.2"
+version="2.0.3"
 currentpid=$$
 action="$1"
 file="$2"
@@ -66,6 +66,12 @@ smart_rm()
 {
 	if [[ -e "$1" ]]; then
 		rm "$1"
+	fi
+}
+smart_mv()
+{
+	if [[ -e "$1" ]]; then
+		mv "$1" "$2"
 	fi
 }
 
@@ -313,6 +319,14 @@ start()
 
 	smart_cd "$wrkdir/"
 
+	#crash directories
+	crashroot="/private/var/mobile/Library/Logs/CrashReporter"
+	precrashroot="/private/var/logs/CrashReporter"
+	crashpanics="$crashroot/Panics"
+	precrashpanics="$precrashroot/Panics"
+	crashdirs=( "$crashroot" "$precrashroot" "$crashpanics" "$precrashpanics" )
+
+
 	#makes sure everything is ready to go
 	checks()
 	{
@@ -531,7 +545,7 @@ start()
 	#pull times out of the crash files
 	getcrashtime()
 	{
-		date=( "$( grep 'Date' $1 )" )
+		date=( $( grep 'Date' $1 ) )
 		crashyear="${date[1]:2:2}"
 		crashmonth="${date[1]:5:2}"
 		crashday="${date[1]:8:2}"
@@ -608,12 +622,16 @@ start()
 		smart_mkdir "$wrkdir"/Results/"$crashtype"_"$seed"/
 		smart_mkdir "$wrkdir/Crashes/Panics/"
 		cp "$dir"/"$crash" "$wrkdir"/Crashes/
-		mv "$dir"/"$crash" "$wrkdir"/Results/"$crashtype"_"$seed"/
-		mv /private/var/www/files/"$seed"."$extension" "$wrkdir"/Results/"$crashtype"_"$seed"/
+		smart_mv "$dir"/"$crash" "$wrkdir"/Results/"$crashtype"_"$seed"/
+		smart_mv /private/var/www/files/"$seed"."$extension" "$wrkdir"/Results/"$crashtype"_"$seed"/
 
 		echo "Moved $crash"
-		sed -i -r "s|~$seed .*|&\*|g" ./tested.log
+		sed -i -r "s|~$seed .*|&\*|g" "$wrkdir"/tested.log
+	}
 
+	#do this if the file crashed something
+	crashed()
+	{	
 		#increment $crashes and write to config
 		((crashes++))
 		if [ $( egrep -c "$crashesregex" "$config" ) -ge 1 ]; then
@@ -621,22 +639,19 @@ start()
 		else
 			echo "crashes: $crashes" >> "$config"
 		fi
-	}
 
-	#do this if the file crashed something
-	crashed()
-	{	
+		#find the crashes
 		for dir in "${crashdirs[@]}"; do
 			smart_cd "$dir/"
 			#Remove Duplicates
 			if [ $( ls ./ | grep -c "Latest" ) -ge 1 ]; then
-				smart_rm "./Latest*.plist"
+				rm ./Latest*.plist
 			fi
 			#Fix for iOS7 crashes
 			for crash in *.synced; do
 				if [ -e "$crash" ]; then
 					if [ $( echo "$crash" | grep -c ".synced" ) -ge 1 ]; then
-						mv "$dir/$crash" "$dir/$( echo $crash | sed 's|.synced||g' )"
+						smart_mv "$dir/$crash" "$dir/$( echo $crash | sed 's|.synced||g' )"
 					fi
 				fi
 			done
@@ -814,6 +829,8 @@ stop()
 
 	readcrashes
 
+	resetsafari &> /dev/null
+
 	if [[ -e "$config" ]]; then	
 		#remove stime from config
 		if [ $( egrep -c "$stimeregex" "$config" ) -ge 1 ]; then
@@ -843,7 +860,7 @@ stop()
 		echo "Number of crashes: $crashes" | tee -a ./fuzz.log
 		if [ $( cat ./fuzz.log | wc -l ) -ge 1 ]; then
 			smart_mkdir "./logs/"
-			mv "./fuzz.log" "./logs/$( date '+%y.%m.%d-%H.%M.%S' ).log"
+			smart_mv "./fuzz.log" "./logs/$( date '+%y.%m.%d-%H.%M.%S' ).log"
 		fi
 	fi
 
