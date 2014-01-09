@@ -326,7 +326,6 @@ start()
 	precrashpanics="$precrashroot/Panics"
 	crashdirs=( "$crashroot" "$precrashroot" "$crashpanics" "$precrashpanics" )
 
-
 	#makes sure everything is ready to go
 	checks()
 	{
@@ -811,7 +810,7 @@ echo '<?xml version="1.0" encoding="UTF-8"?>
 	fi
 
 	#run the file injector in the background, store its pid to the pidfile
-	injector &> "./fuzz.log" &
+	injector &>> "./fuzz.log" &
 	injectorpid=$!
 
 	echo "$injectorpid" >> "$pidfile"
