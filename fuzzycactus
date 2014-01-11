@@ -8,7 +8,7 @@
 #email: compilingEntropy@gmail.com
 #twitter: @compiledEntropy
 #
-#Version 2.0.3
+#Version 2.0.5
 #
 #Dependencies:
 #A file to fuzz with
@@ -27,7 +27,7 @@
 #
 ###
 
-version="2.0.3"
+version="2.0.5"
 currentpid=$$
 action="$1"
 file="$2"
@@ -263,25 +263,6 @@ start()
 		echo "kernel: $kernel" >> "$config"
 	fi
 
-	#tell what settings we're using if they aren't the default settings
-	smart_touch "./fuzz.log"
-	if (( $didpanic == 0 || $kernel == 1 )); then
-		if [ $kernel -ne 0 ]; then
-			echo "Resume after panic: Enabled" | tee -a "./fuzz.log"
-		fi
-		if [ $slowdown -ne 0 ]; then
-			echo "Slowdown: Enabled" | tee -a "./fuzz.log"
-		fi
-		if [ $( echo ""$time" != "11"" | bc ) -eq 1 ]; then
-			echo "Sleep time: $time" | tee -a "./fuzz.log"
-		fi
-		if [[ "$ratio" != "0.0001:0.001" ]]; then
-			echo "Mutation ratio: $ratio" | tee -a "./fuzz.log"
-		else
-			echo "Mutation ratio: $ratio" >> "./fuzz.log"
-		fi
-	fi
-
 	#relative paths
 	path="$( pwd )"
 	if [[ "${file:0:2}" == "./" ]]; then
@@ -318,6 +299,25 @@ start()
 	fi
 
 	smart_cd "$wrkdir/"
+
+	#tell what settings we're using if they aren't the default settings
+	smart_touch "./fuzz.log"
+	if (( $didpanic == 0 || $kernel == 1 )); then
+		if [ $kernel -ne 0 ]; then
+			echo "Resume after panic: Enabled" | tee -a "./fuzz.log"
+		fi
+		if [ $slowdown -ne 0 ]; then
+			echo "Slowdown: Enabled" | tee -a "./fuzz.log"
+		fi
+		if [ $( echo ""$time" != "11"" | bc ) -eq 1 ]; then
+			echo "Sleep time: $time" | tee -a "./fuzz.log"
+		fi
+		if [[ "$ratio" != "0.0001:0.001" ]]; then
+			echo "Mutation ratio: $ratio" | tee -a "./fuzz.log"
+		else
+			echo "Mutation ratio: $ratio" >> "./fuzz.log"
+		fi
+	fi
 
 	#crash directories
 	crashroot="/private/var/mobile/Library/Logs/CrashReporter"
@@ -531,6 +531,8 @@ start()
 			return 1
 		fi
 
+		smart_rm "$wrkdir/README"
+
 		return 2
 	}
 
@@ -615,7 +617,11 @@ start()
 	#do this once you find what crashlog goes with the file
 	foundit()
 	{
-		crashtype=$( echo "$crash" | sed 's|_.*||g' | sed 's|-.*||g' ) #type of crash determined by whatever comes before '-' or '_' in crash name
+		if [ $( echo "$crash" | grep -c "panic" ) -eq 0 ]; then
+			crashtype=$( echo "$crash" | sed 's|_.*||g' | sed 's|-.*||g' ) #type of crash determined by whatever comes before '-' or '_' in crash name
+		else
+			crashtype="panic"
+		fi
 		
 		#create directory if it does not exist, and copy files to that directory
 		smart_mkdir "$wrkdir"/Results/"$crashtype"_"$seed"/
@@ -674,11 +680,11 @@ start()
 		slowdown()
 		{
 			let j+=1
-			if [ $j -ge 25 ]; then
+			if [ $j -ge 20 ]; then
 				time=$( bc <<< "scale=1;$time+ 0.1" )
 				j=1
 				echo "Time incremented"
-				killall mediaserverd
+				#killall mediaserverd
 			fi
 		}
 
@@ -710,17 +716,17 @@ start()
 		#installs launch daemon so that we can recover from any potential panics
 		install_recovery()
 		{
-			if [[ ! -e "$launchd" ]]; then
-				##keep the plutil commands commented in case I need to dynamically generate the plist later
-				#plutil -create "$launchd" &> /dev/null
-				#plutil -AbandonProcessGroup -true "$launchd" &> /dev/null
-				#plutil -Label -string com.compilingentropy.fuzzycactus "$launchd" &> /dev/null
-				#plutil -ProcessType -string Interactive "$launchd" &> /dev/null
-				#plutil -ProgramArguments -array "$launchd" &> /dev/null
-				#plutil -key ProgramArguments -arrayadd -value /usr/bin/fuzzycactus "$launchd" &> /dev/null
-				#plutil -key ProgramArguments -arrayadd -value start "$launchd" &> /dev/null
-				#plutil -key ProgramArguments -arrayadd -value file "$launchd" &> /dev/null
-				#plutil -RunAtLoad -true "$launchd" &> /dev/null
+			smart_rm "$launchd"
+			##keep the plutil commands commented in case I need to dynamically generate the plist later
+			#plutil -create "$launchd" &> /dev/null
+			#plutil -AbandonProcessGroup -true "$launchd" &> /dev/null
+			#plutil -Label -string com.compilingentropy.fuzzycactus "$launchd" &> /dev/null
+			#plutil -ProcessType -string Interactive "$launchd" &> /dev/null
+			#plutil -ProgramArguments -array "$launchd" &> /dev/null
+			#plutil -key ProgramArguments -arrayadd -value /usr/bin/fuzzycactus "$launchd" &> /dev/null
+			#plutil -key ProgramArguments -arrayadd -value start "$launchd" &> /dev/null
+			#plutil -key ProgramArguments -arrayadd -value file "$launchd" &> /dev/null
+			#plutil -RunAtLoad -true "$launchd" &> /dev/null
 #use prebuilt plist to save time
 echo '<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -736,13 +742,12 @@ echo '<?xml version="1.0" encoding="UTF-8"?>
         <array>
                 <string>/usr/bin/fuzzycactus</string>
                 <string>start</string>
-                <string>/var/fuzzycactus/file.mov</string>
+                <string>file</string>
         </array>
         <key>RunAtLoad</key>
         <true/>
 </dict>
-</plist>' >> "$launchd"
-			fi
+</plist>' > "$launchd"
 			sed -i "s|<string>file</string>|<string>$file</string>|g" "$launchd"
 		}
 
@@ -786,6 +791,7 @@ echo '<?xml version="1.0" encoding="UTF-8"?>
 	#determine what $seed was
 	if [ $( egrep -c "([~][0-9]+)" ./tested.log ) -ge 1 ]; then
 		seed=$( egrep -o "([~][0-9]+)" ./tested.log | tail -n 1 | egrep -o "([0-9]+)" )
+		((seed++))
 	else
 		seed=1
 	fi
@@ -793,6 +799,7 @@ echo '<?xml version="1.0" encoding="UTF-8"?>
 	#recover from kpanic
 	if [ $didpanic -eq 1 ]; then
 		echo "Recovering from unexpected termination..."
+		echo "~$seed $( date '+%y.%m.%d-%H.%M.%S' )" >> ./tested.log
 
 		setstime
 
@@ -817,7 +824,7 @@ echo '<?xml version="1.0" encoding="UTF-8"?>
 
 	#watch it go
 	if [ $didpanic -eq 0 ]; then
-		tail -f "./fuzz.log"
+		tail -n 0 -f "./fuzz.log"
 	fi
 }
 
@@ -891,7 +898,7 @@ watch()
 	if [ $isrunning -eq 1 ]; then
 		readcrashes
 		echo "Number of crashes so far in this session: $crashes"
-		tail -f "$wrkdir/fuzz.log"
+		tail -n 1 -f "$wrkdir/fuzz.log"
 	else
 		echo "No fuzzycactus process running."
 	fi
