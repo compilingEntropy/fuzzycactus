@@ -8,7 +8,7 @@
 #email: compilingEntropy@gmail.com
 #twitter: @compiledEntropy
 #
-#Version 2.0.5
+#Version 2.0.6
 #
 #Dependencies:
 #A file to fuzz with
@@ -17,7 +17,6 @@
 #bc
 #lighttpd
 #adv-cmds
-#safariresetter
 #cURL
 #wget
 #coreutils
@@ -27,7 +26,7 @@
 #
 ###
 
-version="2.0.5"
+version="2.0.6"
 currentpid=$$
 action="$1"
 file="$2"
@@ -136,6 +135,18 @@ is_running()
 	else
 		echo "no dont do that"
 	fi
+}
+
+safarireset()
+{
+	killall -kill MobileSafari
+	rm -rf "$safarilocation"/Library/Caches/Safari/
+	rm -rf "$safarilocation"/Library/Safari/History.plist
+	rm -rf "$safarilocation"/Library/Safari/SuspendState.plist
+	rm -rf "$safarilocation"/Library/WebKit/LocalStorage/
+	rm -rf "$safarilocation"/Library/WebKit/Databases/
+	rm -rf "$safarilocation"/Library/Cookies/
+	rm -rf "$safarilocation"/Library/Caches/com.apple.mobilesafari
 }
 
 #read the number of crashes from the file, we do this a few times
@@ -338,14 +349,14 @@ start()
 		smart_touch "./tested.log"
 
 		#dependency list
-		installpkgs="apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils"
+		installpkgs="apt-get install com.innoying.sbutils bc lighttpd adv-cmds curl wget coreutils"
 		install()
 		{
-		             apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils
+		             apt-get install com.innoying.sbutils bc lighttpd adv-cmds curl wget coreutils
 		}
 
 		#check dependencies
-		depends=( "com.innoying.sbutils" "bc" "lighttpd" "adv-cmds" "com.cameronfarzaneh.safariresetter" "curl" "wget" "coreutils" "zzuf" )
+		depends=( "com.innoying.sbutils" "bc" "lighttpd" "adv-cmds" "curl" "wget" "coreutils" "zzuf" )
 		checkdepends()
 		{
 			hasdepends=1
@@ -435,7 +446,7 @@ start()
 						echo "Try running this script again as root, or complete the installation of missing dependencies manually."
 					fi
 					echo "To install most of the dependencies required, run the following as root:"
-					echo "apt-get install com.innoying.sbutils bc lighttpd adv-cmds com.cameronfarzaneh.safariresetter curl wget coreutils"
+					echo "$installpkgs"
 					echo "If you're missing zzuf, you can get it here: https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb."
 					return 1
 				else
@@ -675,12 +686,13 @@ start()
 	{
 		j=1
 		cp "$file" ./file."$extension" &> /dev/null
+		safarilocation=$( find /var/mobile/Applications/ -name "MobileSafari.app" )
 
 		#may not be necessary, but the idea is that as your device slows down from testing more files, it will add to the sleep time
 		slowdown()
 		{
 			let j+=1
-			if [ $j -ge 20 ]; then
+			if [ $j -ge 15 ]; then
 				time=$( bc <<< "scale=1;$time+ 0.1" )
 				j=1
 				echo "Time incremented"
@@ -706,7 +718,8 @@ start()
 			sbopenurl http://127.0.0.1/files/"$seed"."$extension"
 			echo "Safari opened"
 			sleep $time
-			resetsafari
+			safarireset
+			echo "Safari has been successfully reset."
 			if [ $slowdown -eq 1 ]; then
 				slowdown
 			fi
@@ -832,12 +845,13 @@ echo '<?xml version="1.0" encoding="UTF-8"?>
 stop()
 {
 	smart_cd "$wrkdir/"
+	safarilocation=$( find /var/mobile/Applications/ -name "MobileSafari.app" )
 
 	readcrashes
 
-	resetsafari &> /dev/null
+	safarireset
 
-	if [[ -e "$config" ]]; then	
+	if [[ -e "$config" ]]; then
 		#remove stime from config
 		if [ $( egrep -c "$stimeregex" "$config" ) -ge 1 ]; then
 			sed -i -r "/$stimeregex/d" "$config"
