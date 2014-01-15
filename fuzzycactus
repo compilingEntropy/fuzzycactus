@@ -8,7 +8,7 @@
 #email: compilingEntropy@gmail.com
 #twitter: @compiledEntropy
 #
-#Version 2.0.6
+#Version 2.0.7
 #
 #Dependencies:
 #A file to fuzz with
@@ -26,7 +26,7 @@
 #
 ###
 
-version="2.0.6"
+version="2.0.7"
 currentpid=$$
 action="$1"
 file="$2"
@@ -35,6 +35,8 @@ usage="Usage: fuzzycactus [action] [file] [options]\nfuzzycactus [start/stop/wat
 wrkdir="/private/var/fuzzycactus"
 config="$wrkdir/fuzzycactus.conf"
 launchd="/System/Library/LaunchDaemons/com.compilingentropy.fuzzycactus.plist"
+sysversion="/System/Library/CoreServices/SystemVersion.plist"
+extended_states="/var/lib/apt/extended_states"
 pidfile="$wrkdir/pid"
 
 if [[ -z "$action" ]]; then
@@ -64,7 +66,11 @@ smart_touch()
 smart_rm()
 {
 	if [[ -e "$1" ]]; then
-		rm "$1"
+		if [[ -z "$2" ]]; then
+			rm "$1"
+		else
+			rm "$2" "$1"
+		fi
 	fi
 }
 smart_mv()
@@ -137,16 +143,36 @@ is_running()
 	fi
 }
 
+getversion()
+{
+	if [[ -e "$sysversion" ]]; then
+		ios=$( grep -A 1 "ProductVersion" "$sysversion" | egrep -o "([0-9]+[\.][0-9]+[\.][0-9]+|[0-9]+[\.][0-9]+)" | sed "s|\..*||g" )
+	else
+		echo "This version of iOS (whatever it is) is unsupported, probably."
+		cleanexit
+	fi
+	if [ $( echo "$ios" | egrep -c "([0-9]+)" ) -ne 1 ]; then
+		echo "Error: Could not determine iOS version!"
+		cleanexit
+	fi
+	if [ $ios -le 6 ]; then
+		safarilocation="/private/var/mobile/"
+	elif [ $ios -ge 7 ]; then
+		safarilocation=$( find /var/mobile/Applications/ -name 'MobileSafari.app' | sed "s|MobileSafari.app||g" )
+	fi
+}
+
 safarireset()
 {
 	killall -kill MobileSafari
-	rm -rf "$safarilocation"/Library/Caches/Safari/
-	rm -rf "$safarilocation"/Library/Safari/History.plist
-	rm -rf "$safarilocation"/Library/Safari/SuspendState.plist
-	rm -rf "$safarilocation"/Library/WebKit/LocalStorage/
-	rm -rf "$safarilocation"/Library/WebKit/Databases/
-	rm -rf "$safarilocation"/Library/Cookies/
-	rm -rf "$safarilocation"/Library/Caches/com.apple.mobilesafari
+
+	smart_rm "$safarilocation/Library/Caches/Safari" "-rf"
+	smart_rm "$safarilocation/Library/Safari/History.plist" "-rf"
+	smart_rm "$safarilocation/Library/Safari/SuspendState.plist" "-rf"
+	smart_rm "$safarilocation/Library/WebKit/LocalStorage/" "-rf"
+	smart_rm "$safarilocation/Library/Webkit/Databases" "-rf"
+	smart_rm "$safarilocation/Library/Cookies/" "-rf"
+	smart_rm "$safarilocation/Library/Caches/com.apple.MobileSafari" "-rf"
 }
 
 #read the number of crashes from the file, we do this a few times
@@ -455,6 +481,15 @@ start()
 			done
 		fi
 
+		#set packages as 'auto-installed' rather than manually installed
+		for package in "${depends[@]}"; do
+			line=$( grep "$package" -n "$extended_states" | sed "s|:.*||g" )
+			if [ $( echo "$line" | egrep -c "([0-9]+)" ) -eq 1 ]; then
+				((line++))
+				sed -i "$line""s|0|1|g" "$extended_states"
+			fi
+		done
+
 		#check for server config
 		if [[ ! -e /private/etc/lighttpd.conf ]]; then
 			echo "No lighttpd.conf file found in /private/etc/!"
@@ -463,15 +498,15 @@ start()
 				echo "Would you like me to set one up for you? (y/n)"
 				read answer
 				if [[ "$answer" == "n" ]]; then
-						echo "You'll need to set one up yourself then, see https://ghostbin.com/paste/suk7q for an example."
+						echo "You'll need to set one up yourself then, see https://ghostbin.com/paste/275n6 for an example."
 						return 1
 				elif [[ "$answer" == "y" ]]; then
 						echo "Setting up..."
-						curl -# http://ghostbin.com/paste/suk7q/raw > /private/etc/lighttpd.conf
+						curl -# http://ghostbin.com/paste/275n6/raw > /private/etc/lighttpd.conf
 						sed -i 's|\r$||' /private/etc/lighttpd.conf
 						if [[ ! -e /private/etc/lighttpd.conf ]]; then
 							echo "Something went wrong while setting up the file, please set one up manually or try again."
-							echo "See https://ghostbin.com/paste/suk7q for an example."
+							echo "See https://ghostbin.com/paste/275n6 for an example."
 							return 1
 						fi
 						echo "Done"
@@ -686,7 +721,7 @@ start()
 	{
 		j=1
 		cp "$file" ./file."$extension" &> /dev/null
-		safarilocation=$( find /var/mobile/Applications/ -name "MobileSafari.app" )
+		getversion
 
 		#may not be necessary, but the idea is that as your device slows down from testing more files, it will add to the sleep time
 		slowdown()
@@ -796,8 +831,8 @@ echo '<?xml version="1.0" encoding="UTF-8"?>
 			fi
 		done
 
-		echo "Done!"
-		fuzzycactus stop
+		echo "Fuzzing complete!"
+		fuzzycactus stop &> /dev/null &
 
 	}
 
@@ -845,11 +880,11 @@ echo '<?xml version="1.0" encoding="UTF-8"?>
 stop()
 {
 	smart_cd "$wrkdir/"
-	safarilocation=$( find /var/mobile/Applications/ -name "MobileSafari.app" )
+	getversion
 
 	readcrashes
 
-	safarireset
+	safarireset &> /dev/null
 
 	if [[ -e "$config" ]]; then
 		#remove stime from config
