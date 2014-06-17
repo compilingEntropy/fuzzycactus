@@ -8,7 +8,7 @@
 #email: compilingEntropy@gmail.com
 #twitter: @compiledEntropy
 #
-#Version 2.0.7
+#Version 2.1
 #
 #Dependencies:
 #A file to fuzz with
@@ -26,7 +26,7 @@
 #
 ###
 
-version="2.0.7"
+version="2.1"
 currentpid=$$
 action="$1"
 file="$2"
@@ -37,6 +37,7 @@ config="$wrkdir/fuzzycactus.conf"
 launchd="/System/Library/LaunchDaemons/com.compilingentropy.fuzzycactus.plist"
 sysversion="/System/Library/CoreServices/SystemVersion.plist"
 extended_states="/var/lib/apt/extended_states"
+lighttpdconf="/private/etc/lighttpd.conf"
 pidfile="$wrkdir/pid"
 
 if [[ -z "$action" ]]; then
@@ -115,13 +116,23 @@ cleanexit()
 	exit
 }
 
-#set pattern matching format
-stimeregex="(^stime: [0-9]{2}[\.][0-9]{2}[\.][0-9]{2}[-][0-9]{2}[\.][0-9]{2}[\.][0-9]{2}$)"
-ratioregex="([0]*[\.][0-9]+[:][0]*[\.][0-9]+$)|(^[0]*[\.][0-9]+$)"
-timeregex="([0-9]+$)|(^[0-9]+[\.][0-9]+$)"
-slowdownregex="(^slowdown: [0-1]$)"
-kernelregex="(^kernel: [0-1]$)"
-crashesregex="(^crashes: [0-9]+$)"
+##regular expressions r of cool #HOLMES
+#set file read pattern matching formats
+stimefileregex="(^stime: [0-9]{2}[\.][0-9]{2}[\.][0-9]{2}[-][0-9]{2}[\.][0-9]{2}[\.][0-9]{2}$)"
+ratiofileregex="(^ratio: [0]*[\.][0-9]+[:][0]*[\.][0-9]+$)|(^[0]*[\.][0-9]+$)"
+timefileregex="(^time: [0-9]+$)|(^[0-9]+[\.][0-9]+$)"
+slowdownfileregex="(^slowdown: [0-1]$)"
+kernelfileregex="(^kernel: [0-1]$)"
+crashesfileregex="(^crashes: [0-9]+$)"
+safarifileregex="(^safari: /private/var/mobile/Library/$)|(^safari: /private/var/mobile/Applications/[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}/Library/$)"
+#set data pattern matching formats
+stimeregex="([0-9]{2}[\.][0-9]{2}[\.][0-9]{2}[-][0-9]{2}[\.][0-9]{2}[\.][0-9]{2}$)"
+ratioregex="([0]*[\.][0-9]+[:][0]*[\.][0-9]+$)|([0]*[\.][0-9]+$)"
+timeregex="([0-9]+$)|([0-9]+[\.][0-9]+$)"
+slowdownregex="([0-1]$)"
+kernelregex="([0-1]$)"
+crashesregex="([0-9]+$)"
+safariregex="(/private/var/mobile/Library/$)|(/private/var/mobile/Applications/[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}/Library/$)"
 
 #determine whether fuzzycactus is already running
 is_running()
@@ -143,36 +154,40 @@ is_running()
 	fi
 }
 
+#get major system version
 getversion()
 {
-	if [[ -e "$sysversion" ]]; then
-		ios=$( grep -A 1 "ProductVersion" "$sysversion" | egrep -o "([0-9]+[\.][0-9]+[\.][0-9]+|[0-9]+[\.][0-9]+)" | sed "s|\..*||g" )
-	else
-		echo "This version of iOS (whatever it is) is unsupported, probably."
-		cleanexit
+	ios=$( sbdevice -V )
+	if [ $( echo "$ios" | grep -c "([0-9]+[\.][0-9]+[\.][0-9]+|[0-9]+[\.][0-9]+)" ) -ne 1 ]; then
+		if [[ -e "$sysversion" ]]; then
+			ios=$( grep -A 1 "ProductVersion" "$sysversion" | egrep -o "([0-9]+[\.][0-9]+[\.][0-9]+|[0-9]+[\.][0-9]+)" )
+		else
+			echo "This version of iOS (whatever it is) is unsupported, probably."
+			cleanexit
+		fi
 	fi
+	ios=$( echo "$ios" | sed "s|\..*||g" )
 	if [ $( echo "$ios" | egrep -c "([0-9]+)" ) -ne 1 ]; then
 		echo "Error: Could not determine iOS version!"
 		cleanexit
 	fi
-	if [ $ios -le 6 ]; then
-		safarilocation="/private/var/mobile/"
-	elif [ $ios -ge 7 ]; then
-		safarilocation=$( find /var/mobile/Applications/ -name 'MobileSafari.app' | sed "s|MobileSafari.app||g" )
-	fi
 }
 
+#reset safari's cache, history, current state, etc.
 safarireset()
 {
-	killall -kill MobileSafari
+	if [[ -z "$safarilocation" || ! -d "$safarilocation" ]]; then
+		getsafarilocation
+	fi
+	killall -9 MobileSafari
 
-	smart_rm "$safarilocation/Library/Caches/Safari" "-rf"
-	smart_rm "$safarilocation/Library/Safari/History.plist" "-rf"
-	smart_rm "$safarilocation/Library/Safari/SuspendState.plist" "-rf"
-	smart_rm "$safarilocation/Library/WebKit/LocalStorage/" "-rf"
-	smart_rm "$safarilocation/Library/Webkit/Databases" "-rf"
-	smart_rm "$safarilocation/Library/Cookies/" "-rf"
-	smart_rm "$safarilocation/Library/Caches/com.apple.MobileSafari" "-rf"
+	smart_rm "$safarilocation/Caches/Safari" "-rf"
+	smart_rm "$safarilocation/Safari/History.plist" "-rf"
+	smart_rm "$safarilocation/Safari/SuspendState.plist" "-rf"
+	smart_rm "$safarilocation/WebKit/LocalStorage/" "-rf"
+	smart_rm "$safarilocation/Webkit/Databases" "-rf"
+	rm -rf   "$safarilocation"/Cookies/*
+	smart_rm "$safarilocation/Caches/com.apple.mobilesafari/" "-rf"
 }
 
 #read the number of crashes from the file, we do this a few times
@@ -180,8 +195,47 @@ readcrashes()
 {
 	crashes=0
 	if [[ -e "$config" ]]; then
-		if [ $( egrep -c "$crashesregex" "$config" ) -ge 1 ]; then
-			crashes=$( egrep "$crashesregex" "$config" | tail -n 1 | egrep -o "([0-9]+)" )
+		if [ $( egrep -c "$crashesfileregex" "$config" ) -ge 1 ]; then
+			crashes=$( egrep "$crashesfileregex" "$config" | tail -n 1 | egrep -o "$crashesregex" )
+		fi
+	fi
+}
+
+#read the location of safari cache files from config
+readsafari()
+{
+	if [[ -e "$config" ]]; then
+		if [ $( egrep -c "$safarifileregex" "$config" ) -ge 1 ]; then
+			safarilocation=$( egrep "$safarifileregex" "$config" | tail -n 1 | egrep -o "$safariregex" )
+
+		fi
+	fi
+}
+
+#get location of safari's config files
+getsafarilocation()
+{
+	readsafari
+	if [[ -z "$safarilocation" || ! -d "$safarilocation" ]]; then
+		getversion
+		if [ $ios -le 6 ]; then
+			safarilocation="/private/var/mobile/Library/"
+		elif [ $ios -ge 7 ]; then
+			safarilocation=$( find /private/var/mobile/Applications/ -name 'MobileSafari.app' | sed 's|MobileSafari.app|Library/|g' )
+		fi
+
+		sed -i -r "\@$safarifileregex@d" "$config"
+		echo "safari: $safarilocation" >> "$config"
+
+		#check to see if `find` messed up
+		if [ $( echo "$safarilocation" | egrep -c "$safariregex" ) -ne 1 ]; then
+			echo "Invalid path detected for MobileSafari!(?)"
+			cleanexit
+		fi
+
+		if [[ -z "$safarilocation" || ! -d "$safarilocation" ]]; then
+			echo "Error: Could not retrieve MobileSafari's location!"
+			cleanexit
 		fi
 	fi
 }
@@ -189,6 +243,278 @@ readcrashes()
 #main start function, runs when 'start' is the given action
 start()
 {
+	##handle the file param
+	#relative paths
+	path="$( pwd )"
+	if [[ "${file:0:2}" == "./" ]]; then
+		file="$path/${file:2}"
+	elif [[ "${file:0:3}" == "../" ]]; then
+		file="$path/$file"
+	fi
+
+	if [[ ! -e "$file" ]]; then
+		echo "The provided file does not exist."
+		echo "Please check your path and try again."
+		cleanexit
+	fi
+
+	#determine file extension, warn if none is found
+	extension=$( echo $file | sed 's|.*\.||g' | tr '[:upper:]' '[:lower:]' )
+	if [[ -z "$extension" ]]; then
+		echo "Warning:"
+		echo "No file extension found on input file!"
+		echo "This can confuse MobileSafari's file handler, it is recommended that you add a file extension to your file."
+		while (true);
+		do
+			echo "Would you like to continue anyway? (y/n)"
+			read answer
+			if [[ "$answer" =~ [Nn] ]]; then
+				cleanexit
+			elif [[ "$answer" =~ [Yy] ]]; then
+				echo "Continuing..."
+				break
+			else
+				echo "Not a valid reponse; valid responses are 'y', or 'n'."
+			fi		
+		done
+	fi
+
+	smart_cd "$wrkdir/"
+
+	#crash directories
+	crashroot="/private/var/mobile/Library/Logs/CrashReporter"
+	precrashroot="/private/var/logs/CrashReporter"
+	crashpanics="$crashroot/Panics"
+	precrashpanics="$precrashroot/Panics"
+	crashdirs=( "$crashroot" "$precrashroot" "$crashpanics" "$precrashpanics" )
+
+	#makes sure everything is ready to go
+	checks()
+	{
+		#make files / directories
+		for dir in "${crashdirs[@]}"; do
+			smart_mkdir "$dir/"
+		done
+		smart_mkdir "/private/var/log/lighttpd/"
+		smart_mkdir "/private/var/www/files/"
+		smart_touch "$wrkdir/tested.log"
+
+		#check dependencies
+		depends=( "com.innoying.sbutils" "bc" "lighttpd" "adv-cmds" "curl" "wget" "coreutils" "zzuf" )
+		checkdepends()
+		{
+			hasdepends=1
+			haszzuf=1
+			for package in "${depends[@]}"; do
+				if [[ "$package" == "coreutils" ]]; then
+					amount=2
+				else
+					amount=1
+				fi
+				if [ $( dpkg -l | grep -c "$package" ) -lt $amount ]; then
+					echo "Missing '$package'"'!'
+					missing=( "${missing[@]}" "$package" )
+					hasdepends=0
+					if [[ "$package" == "zzuf" ]]; then
+						haszzuf=0
+					fi
+				fi
+			done
+		}
+		checkdepends
+
+		#not all dependencies exist, try to get them
+		if [ $hasdepends -eq 0 ]; then
+			echo "Not all dependencies were met."
+			while (true);
+			do
+				echo "Would you like me to try installing them? (y/n)"
+				read answer
+				if [[ "$answer" =~ [Nn] ]]; then
+						echo "To install most of the dependencies required, run the following as root:"
+						echo "apt-get install ${missing[@]/zzuf/}"
+						if [ $haszzuf -eq 0 ]; then
+							echo "You can get zzuf at 'https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb'."
+						fi
+						return 1
+				elif [[ "$answer" =~ [Yy] ]]; then
+					if [[ ! -e /usr/bin/whoami ]]; then
+						echo "Because you don't have coreutils, I can't tell if you're running this script as root."
+						while (true);
+						do
+							echo "Are you running this script as root? (y/n)"
+							echo "(If you aren't, the installation of missing dependencies will fail.)"
+							read answer
+							if [[ "$answer" =~ [Nn] ]]; then
+									isroot=0
+									break
+							elif [[ "$answer" =~ [Yy] ]]; then
+									isroot=2
+									break
+							else
+									echo "Not a valid reponse; valid responses are 'y', or 'n'."
+							fi
+						done
+					elif [[ "$( whoami )" == "root" ]]; then
+						isroot=1
+					else
+						isroot=0
+					fi
+
+					if [ $isroot -ge 1 ]; then
+						if [ $( dpkg -l | grep apt7 | grep tool | grep -c Debian ) -eq 1 ]; then
+							echo "Installing required dependencies..."
+							for package in "${missing[@]}"; do
+								if [[ "$package" != "zzuf" ]]; then
+									apt-get install "$package"
+								else
+									wget https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb --no-check-certificate
+									dpkg -i ./zzuf_0.13-1_iphoneos-arm.deb
+									if [ $( dpkg -l | grep -c zzuf ) -eq 1 ]; then
+										smart_rm ./zzuf_0.13-1_iphoneos-arm.deb
+									fi
+								fi
+
+								#set package as 'auto-installed' rather than manually installed
+								line=$( grep "$package" -n "$extended_states" | sed "s|:.*||g" )
+								if [ $( echo "$line" | egrep -c "([0-9]+)" ) -eq 1 ]; then
+									((line++))
+									sed -i "$line""s|0|1|g" "$extended_states"
+								fi
+							done
+							checkdepends
+							if [ $hasdepends -eq 1 ]; then
+								echo "Done! Continuing..."
+								break
+							else
+								echo "Something went wrong with the install, please install the dependencies you're missing manually or try again."
+								if [ $isroot -eq 2 ]; then
+									echo "Sounds like you weren't actually root, please run this script again as root or complete setup manually."
+								fi
+							fi
+						else
+							echo "This script was unable to set up the required dependencies for you because you don't have apt7 installed."
+							echo "Install 'APT 0.7 Strict' from Cydia, and try again."
+						fi
+					else
+						echo "This script was unable to set up the required dependencies for you because you're not running this script as root."
+						echo "Try running this script again as root, or complete the installation of missing dependencies manually."
+					fi
+					echo "To install most of the dependencies required, run the following as root:"
+					echo "apt-get install ${missing[@]/zzuf/}"
+					if [ $haszzuf -eq 0 ]; then
+						echo "You can get zzuf at 'https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb'."
+					fi
+					return 1
+				else
+					echo "Not a valid reponse; valid responses are 'y', or 'n'."
+				fi
+			done
+		fi
+
+		#check for server config
+		if [[ ! -e "$lighttpdconf" ]]; then
+			echo "No lighttpd.conf file found in /private/etc/!"
+			while (true);
+			do
+				echo "Would you like me to set one up for you? (y/n)"
+				read answer
+				if [[ "$answer" =~ [Nn] ]]; then
+					echo "You'll need to set one up yourself then, see https://ghostbin.com/paste/275n6 for an example."
+					return 1
+				elif [[ "$answer" =~ [Yy] ]]; then
+					echo -n "Setting up..."
+					curl -# http://ghostbin.com/paste/275n6/raw > "$lighttpdconf"
+					sed -i 's|\r$||' "$lighttpdconf"
+					if [[ ! -e "$lighttpdconf" ]]; then
+						echo ""
+						echo "Something went wrong while setting up the file, please set one up manually or try again."
+						echo "See https://ghostbin.com/paste/275n6 for an example."
+						return 1
+					fi
+					echo "Done"
+					break
+				else
+					echo "Not a valid reponse; valid responses are 'y', or 'n'."
+				fi
+			done
+		fi
+
+		#check document-root in server config
+		if [ $( egrep -c '(^server.document-root = "/var/www/"[[:space:]]*$|^server.document-root = "/var/www/"[[:space:]]+[#]+.*$)' "$lighttpdconf" ) -ne 1 ]; then
+			echo "You must have your document root set up in /private/var/www/"
+			echo "Please modify your $lighttpdconf file accordingly."
+			return 1
+		fi
+
+		#check server port is 80
+		if [ $( egrep -c '(^server.port = 80[[:space:]]*$|^server.port = 80[[:space:]]+[#]+.*$)' "$lighttpdconf" ) -ne 1 ]; then
+			echo "You must have your server port set to 80."
+			echo "Please modify your $lighttpdconf file accordingly."
+			return 1
+		fi
+
+		#start server
+		exitstatus="1"
+		curl -# 127.0.0.1 &> /dev/null; exitstatus="$?"
+		if [ $exitstatus -ne 0 ]; then
+			echo "No server running, attempting to start server..."
+			lighttpd -f /etc/lighttpd.conf
+
+			timeout="5"
+			counter="0.3"
+			exitstatus="1"
+
+			echo -n "Starting server.."
+			while (( $( echo ""$timeout" >= "$counter"" | bc ) == 1 && $exitstatus != 0 ));
+			do
+				sleep 0.3
+				echo -n "."
+				curl -# 127.0.0.1 &> /dev/null; exitstatus="$?"
+				counter=$( bc <<< "scale=1;$counter+ 0.3" )
+			done
+			if [ $exitstatus -eq 0 ]; then
+				echo "Server started."
+			else
+				echo "Unable to start server."
+				return 1
+			fi
+		fi
+
+		#neuter crash reporting
+		if [ $( egrep -c "(^127.0.0.1[[:space:]]+iphonesubmissions.apple.com$)" /private/etc/hosts ) -lt 1 ]; then
+			if [[ "$( whoami )" != "root" ]]; then
+				echo "Run this script again with root access (this is only required once)."
+				return 1
+			else
+				echo "
+#Begin fuzzycactus
+127.0.0.1       iphonesubmissions.apple.com
+#End fuzzycactus" >> /private/etc/hosts
+			fi
+		fi
+
+		#check to see if fuzzycactus is already running
+		is_running
+		if [ $isrunning -eq 1 ]; then
+			echo "fuzzycactus is already running!"
+			echo "Do 'fuzzycactus watch' to attach to the current process."
+			echo "Do 'fuzzycactus stop' to end the current fuzzing session."
+			return 1
+		fi
+
+		smart_rm "$wrkdir/README"
+
+		return 2
+	}
+
+	#run 'checks', exit if the checks fail
+	checks
+	if [ $? -ne 2 ]; then
+		cleanexit
+	fi
+
+	##handle option params
 	#default values
 	slowdown=0
 	kernel=0
@@ -201,21 +527,21 @@ start()
 	#config file
 	if [[ -e "$config" ]]; then
 		#read values from config
-		if [ $( egrep -c "$stimeregex" "$config" ) -ge 1 ]; then
-			stime=$( egrep "$stimeregex" "$config" | tail -n 1 )
+		if [ $( egrep -c "$stimefileregex" "$config" ) -ge 1 ]; then
+			stime=$( egrep "$stimefileregex" "$config" | tail -n 1 | egrep -o "$stimeregex" )
 			didpanic=1
 		fi
-		if [ $( grep "ratio:" "$config" | egrep -c "$ratioregex" ) -ge 1 ]; then
-			ratio=$( grep "ratio:" "$config" | egrep -o "$ratioregex" | tail -n 1 )
+		if [ $( egrep -c "$ratiofileregex" "$config" ) -ge 1 ]; then
+			ratio=$( egrep "$ratiofileregex" "$config" | tail -n 1 | egrep -o "$ratioregex" )
 		fi
-		if [ $( egrep "(^time: )" "$config" | egrep -c "$timeregex" ) -ge 1 ]; then
-			time=$( egrep "(^time: )" "$config" | egrep -o "$timeregex" | tail -n 1 )
+		if [ $( egrep -c "$timefileregex" "$config" ) -ge 1 ]; then
+			time=$( egrep "$timefileregex" "$config" | tail -n 1 | egrep -o "$timeregex" )
 		fi
-		if [ $( egrep -c "$slowdownregex" "$config" ) -ge 1 ]; then
-			slowdown=$( egrep "$slowdownregex" "$config" | tail -n 1 | egrep -o "([0-1])" )
+		if [ $( egrep -c "$slowdownfileregex" "$config" ) -ge 1 ]; then
+			slowdown=$( egrep "$slowdownfileregex" "$config" | tail -n 1 | egrep -o "$slowdownregex" )
 		fi
-		if [ $( egrep -c "$kernelregex" "$config" ) -ge 1 ]; then
-			kernel=$( egrep "$kernelregex" "$config" | tail -n 1 | egrep -o "([0-1])" )
+		if [ $( egrep -c "$kernelfileregex" "$config" ) -ge 1 ]; then
+			kernel=$( egrep "$kernelfileregex" "$config" | tail -n 1 | egrep -o "$kernelregex" )
 		fi
 		readcrashes
 	else
@@ -226,7 +552,7 @@ start()
 #The values stored here will be used when fuzzycactus starts.
 #They will be kept up-to-date with the most recent settings used by fuzzycactus.
 #This is so fuzzycactus can resume its work after a kernel panic.
-#It is not recommended that you modify this file, use fuzzycactus' options instead.
+#Modifying this file is not recommended, use fuzzycactus' options instead.
 #
 ###
 " > "$config"
@@ -279,63 +605,26 @@ start()
 	fi
 
 	#write values to config
-	if [ $( grep "ratio:" "$config" | egrep -c "$ratioregex" ) -ge 1 ]; then
-		sed -i "s|$( grep "ratio:" "$config" | egrep "$ratioregex" | tail -n 1 )|ratio: $ratio|g" "$config"
+	if [ $( egrep -c "$ratiofileregex" "$config" ) -ge 1 ]; then
+		sed -i "s|$( egrep "$ratiofileregex" "$config" | tail -n 1 )|ratio: $ratio|g" "$config"
 	else
 		echo "ratio: $ratio" >> "$config"
 	fi
-	if [ $( egrep "(^time: )" "$config" | egrep -c "$timeregex" ) -ge 1 ]; then
-		sed -i "s|$( egrep "(^time: )" "$config" | egrep "$timeregex" | tail -n 1 )|time: $time|g" "$config"
+	if [ $( egrep -c "$timefileregex" "$config" ) -ge 1 ]; then
+		sed -i "s|$( egrep "$timefileregex" "$config" | tail -n 1 )|time: $time|g" "$config"
 	else
 		echo "time: $time" >> "$config"
 	fi
-	if [ $( egrep -c "$slowdownregex" "$config" ) -ge 1 ]; then
-		sed -i "s|$( egrep "$slowdownregex" "$config" | tail -n 1 )|slowdown: $slowdown|g" "$config"
+	if [ $( egrep -c "$slowdownfileregex" "$config" ) -ge 1 ]; then
+		sed -i "s|$( egrep "$slowdownfileregex" "$config" | tail -n 1 )|slowdown: $slowdown|g" "$config"
 	else
 		echo "slowdown: $slowdown" >> "$config"
 	fi
-	if [ $( egrep -c "$kernelregex" "$config" ) -ge 1 ]; then
-		sed -i "s|$( egrep "$kernelregex" "$config" | tail -n 1 )|kernel: $kernel|g" "$config"
+	if [ $( egrep -c "$kernelfileregex" "$config" ) -ge 1 ]; then
+		sed -i "s|$( egrep "$kernelfileregex" "$config" | tail -n 1 )|kernel: $kernel|g" "$config"
 	else
 		echo "kernel: $kernel" >> "$config"
 	fi
-
-	#relative paths
-	path="$( pwd )"
-	if [[ "${file:0:2}" == "./" ]]; then
-		file="$path/${file:2}"
-	elif [[ "${file:0:3}" == "../" ]]; then
-		file="$path/$file"
-	fi
-
-	if [[ ! -e "$file" ]]; then
-		echo "The provided file does not exist."
-		echo "Please check your path and try again."
-		cleanexit
-	fi
-
-	#determine file extension, warn if none is found
-	extension=$( echo $file | sed 's|.*\.||g' | tr '[:upper:]' '[:lower:]' )
-	if [[ -z "$extension" ]]; then
-		echo "Warning:"
-		echo "No file extension found on input file!"
-		echo "This can confuse MobileSafari's file handler, it is recommended that you add a file extension to your file."
-		while(true)
-		do
-			echo "Would you like to continue anyway? (y/n)"
-			read answer
-			if [[ "$answer" == "n" ]]; then
-				cleanexit
-			elif [[ "$answer" == "y" ]]; then
-				echo "Continuing..."
-				break
-			else
-				echo "Not a valid reponse; valid responses are 'y', or 'n'."
-			fi		
-		done
-	fi
-
-	smart_cd "$wrkdir/"
 
 	#tell what settings we're using if they aren't the default settings
 	smart_touch "./fuzz.log"
@@ -346,7 +635,7 @@ start()
 		if [ $slowdown -ne 0 ]; then
 			echo "Slowdown: Enabled" | tee -a "./fuzz.log"
 		fi
-		if [ $( echo ""$time" != "11"" | bc ) -eq 1 ]; then
+		if [[ "$time" != "11" ]]; then
 			echo "Sleep time: $time" | tee -a "./fuzz.log"
 		fi
 		if [[ "$ratio" != "0.0001:0.001" ]]; then
@@ -356,243 +645,11 @@ start()
 		fi
 	fi
 
-	#crash directories
-	crashroot="/private/var/mobile/Library/Logs/CrashReporter"
-	precrashroot="/private/var/logs/CrashReporter"
-	crashpanics="$crashroot/Panics"
-	precrashpanics="$precrashroot/Panics"
-	crashdirs=( "$crashroot" "$precrashroot" "$crashpanics" "$precrashpanics" )
-
-	#makes sure everything is ready to go
-	checks()
-	{
-		#make files / directories
-		for dir in "${crashdirs[@]}"; do
-			smart_mkdir "$dir/"
-		done
-		smart_mkdir "/private/var/log/lighttpd/"
-		smart_mkdir "/private/var/www/files/"
-		smart_touch "./tested.log"
-
-		#dependency list
-		installpkgs="apt-get install com.innoying.sbutils bc lighttpd adv-cmds curl wget coreutils"
-		install()
-		{
-		             apt-get install com.innoying.sbutils bc lighttpd adv-cmds curl wget coreutils
-		}
-
-		#check dependencies
-		depends=( "com.innoying.sbutils" "bc" "lighttpd" "adv-cmds" "curl" "wget" "coreutils" "zzuf" )
-		checkdepends()
-		{
-			hasdepends=1
-			haszzuf=1
-			for item in "${depends[@]}"; do
-				if [[ "$item" == "coreutils" ]]; then
-					amount=2
-				else
-					amount=1
-				fi
-				if [ $( dpkg -l | grep -c $item ) -lt $amount ]; then
-					echo "Missing '$item'"'!'
-					hasdepends=0
-					if [[ $item == "zzuf" ]]; then
-						haszzuf=0
-					fi
-				fi
-			done
-		}
-		checkdepends
-
-		#not all dependencies exist, try to get them
-		if [[ $hasdepends -eq 0 ]]; then
-			echo "Not all dependencies were met."
-			while(true)
-			do
-				echo "Would you like me to try installing them? (y/n)"
-				read answer
-				if [[ "$answer" == "n" ]]; then
-						echo "To install most of the dependencies required, run the following as root:"
-						echo "$installpkgs"
-						echo "If you're missing zzuf, get it at 'https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb'."
-						return 1
-				elif [[ "$answer" == "y" ]]; then
-					if [[ ! -e /usr/bin/whoami ]]; then
-						echo "Because you don't have coreutils, I can't tell if you're running this script as root."
-						while (true);
-						do
-							echo "Are you running this script as root? (y/n)"
-							echo "(If you aren't, the installation of missing dependencies will fail.)"
-							read answer
-							if [[ "$answer" == "n" ]]; then
-									isroot=0
-									break
-							elif [[ "$answer" == "y" ]]; then
-									isroot=2
-									break
-							else
-									echo "Not a valid reponse; valid responses are 'y', or 'n'."
-							fi
-						done
-					elif [[ "$( whoami )" == "root" ]]; then
-						isroot=1
-					else
-						isroot=0
-					fi
-
-					if [ $isroot -ge 1 ]; then
-						if [[ $( dpkg -l | grep apt7 | grep tool | grep -c Debian ) -eq 1 ]]; then
-							echo "Installing required dependencies..."
-							install
-							if [ $haszzuf -eq 0 ]; then
-								wget https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb --no-check-certificate
-								dpkg -i ./zzuf_0.13-1_iphoneos-arm.deb
-								if [ $( dpkg -l | grep -c zzuf ) -ne 1 ]; then
-									echo "Something went wrong with the install, please install zzuf manually or try again."
-									return 1
-								else
-									rm ./zzuf_0.13-1_iphoneos-arm.deb
-								fi
-							fi
-							checkdepends
-							if [ $hasdepends -eq 1 ]; then
-								break
-							else
-								echo "Something went wrong with the install, please install the dependencies you're missing manually or try again."
-								if [[ $isroot -eq 2 ]]; then
-									echo "Sounds like you weren't actually root, please run this script again as root or complete setup manually."
-								fi
-							fi
-						else
-							echo "This script was unable to set up the required dependencies for you because you don't have apt7 installed."
-							echo "Install 'APT 0.7 Strict' from Cydia, and try again."
-						fi
-					else
-						echo "This script was unable to set up the required dependencies for you because you're not running this script as root."
-						echo "Try running this script again as root, or complete the installation of missing dependencies manually."
-					fi
-					echo "To install most of the dependencies required, run the following as root:"
-					echo "$installpkgs"
-					echo "If you're missing zzuf, you can get it here: https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb."
-					return 1
-				else
-				echo "Not a valid reponse; valid responses are 'y', or 'n'."
-				fi
-			done
-		fi
-
-		#set packages as 'auto-installed' rather than manually installed
-		for package in "${depends[@]}"; do
-			line=$( grep "$package" -n "$extended_states" | sed "s|:.*||g" )
-			if [ $( echo "$line" | egrep -c "([0-9]+)" ) -eq 1 ]; then
-				((line++))
-				sed -i "$line""s|0|1|g" "$extended_states"
-			fi
-		done
-
-		#check for server config
-		if [[ ! -e /private/etc/lighttpd.conf ]]; then
-			echo "No lighttpd.conf file found in /private/etc/!"
-			while (true);
-			do
-				echo "Would you like me to set one up for you? (y/n)"
-				read answer
-				if [[ "$answer" == "n" ]]; then
-						echo "You'll need to set one up yourself then, see https://ghostbin.com/paste/275n6 for an example."
-						return 1
-				elif [[ "$answer" == "y" ]]; then
-						echo "Setting up..."
-						curl -# http://ghostbin.com/paste/275n6/raw > /private/etc/lighttpd.conf
-						sed -i 's|\r$||' /private/etc/lighttpd.conf
-						if [[ ! -e /private/etc/lighttpd.conf ]]; then
-							echo "Something went wrong while setting up the file, please set one up manually or try again."
-							echo "See https://ghostbin.com/paste/275n6 for an example."
-							return 1
-						fi
-						echo "Done"
-						break
-				else
-						echo "Not a valid reponse; valid responses are 'y', or 'n'."
-				fi
-			done
-		fi
-
-		#check document-root in server config
-		if [[ "$( grep server.document-root /private/etc/lighttpd.conf )" != 'server.document-root = "/var/www/" '* && "$( grep server.document-root /private/etc/lighttpd.conf )" != $( echo -e "server.document-root = \"/var/www/\"\n" ) ]]; then
-			echo "You must have your document root set up in /private/var/www/"
-			echo "Please modify your /private/etc/lighttpd.conf file accordingly."
-			return 1
-		fi
-
-		#check server port is 80
-		if [[ "$( grep server.port /private/etc/lighttpd.conf )" != "server.port = 80 "* && "$( grep server.port /private/etc/lighttpd.conf )" != $( echo -e "server.port = 80\n" ) ]]; then
-			echo "You must have your server port set to 80."
-			echo "Please modify your /private/etc/lighttpd.conf file accordingly."
-			return 1
-		fi
-
-		#start server
-		if [[ $( ps -ax | grep lighttpd | grep -c -v grep ) -lt 1 ]]; then
-			echo "No server running, attempting to start server..."
-			lighttpd -f /etc/lighttpd.conf
-
-			timeout="5"
-			counter="0.3"
-			exitstatus="1"
-
-			echo -n "Starting server.."
-			while (( $( echo ""$timeout" >= "$counter"" | bc ) == 1 && $exitstatus != 0 )); do
-				sleep 0.3
-				echo -n "."
-				curl -# 127.0.0.1 &> /dev/null; exitstatus="$?"
-				counter=$( bc <<< "scale=1;$counter+ 0.3" )
-			done
-			if [ $exitstatus -eq 0 ]; then
-				echo "Server started."
-			else
-				echo "Still no server running."
-				return 1
-			fi
-		fi
-
-		#neuter crash reporting
-		if [ $( grep -c '^127.0.0.1       iphonesubmissions.apple.com$' /private/etc/hosts ) -lt 1 ]; then
-			if [[ "$( whoami )" != "root" ]]; then
-				echo "Run this script again with root access (this is only required once)."
-				return 1
-			else
-				echo "
-#Begin fuzzycactus
-127.0.0.1       iphonesubmissions.apple.com
-#End fuzzycactus" >> /private/etc/hosts
-			fi
-		fi
-
-		#check to see if fuzzycactus is already running
-		is_running
-		if [ $isrunning -eq 1 ]; then
-			echo "fuzzycactus is already running!"
-			echo "Do 'fuzzycactus watch' to attach to the current process."
-			echo "Do 'fuzzycactus stop' to end the current fuzzing session."
-			return 1
-		fi
-
-		smart_rm "$wrkdir/README"
-
-		return 2
-	}
-
-	#run 'checks', exit if the checks fail
-	checks
-	if [ $? -ne 2 ]; then
-		cleanexit
-	fi
-
 	###define some functions we'll need later
 	#pull times out of the crash files
 	getcrashtime()
 	{
-		date=( $( grep 'Date' $1 ) )
+		date=( $( grep 'Date' "$1" ) )
 		crashyear="${date[1]:2:2}"
 		crashmonth="${date[1]:5:2}"
 		crashday="${date[1]:8:2}"
@@ -606,8 +663,8 @@ start()
 	{
 		if [[ -z "$stime" ]]; then
 			stime="$( date '+%y.%m.%d-%H.%M.%S' )"
-			if [ $( egrep -c "$stimeregex" "$config" ) -ge 1 ]; then
-				sed -i "s|$( egrep "$stimeregex" "$config" | tail -n 1 )|stime: $stime|g" "$config"
+			if [ $( egrep -c "$stimefileregex" "$config" ) -ge 1 ]; then
+				sed -i "s|$( egrep "$stimefileregex" "$config" | tail -n 1 )|stime: $stime|g" "$config"
 			else
 				echo "stime: $stime" >> "$config"
 			fi
@@ -664,14 +721,14 @@ start()
 	foundit()
 	{
 		if [ $( echo "$crash" | grep -c "panic" ) -eq 0 ]; then
-			crashtype=$( echo "$crash" | sed 's|_.*||g' | sed 's|-.*||g' ) #type of crash determined by whatever comes before '-' or '_' in crash name
+			crashtype=$( echo "$crash" | sed 's|_.*||g' | sed 's|-.*||g' | sed 's|\..*||g' ) #type of crash determined by whatever comes before '-', '_', or '.' in crash name
 		else
 			crashtype="panic"
 		fi
-		
+
 		#create directory if it does not exist, and copy files to that directory
 		smart_mkdir "$wrkdir"/Results/"$crashtype"_"$seed"/
-		smart_mkdir "$wrkdir/Crashes/Panics/"
+		smart_mkdir "$wrkdir/Crashes/"
 		cp "$dir"/"$crash" "$wrkdir"/Crashes/
 		smart_mv "$dir"/"$crash" "$wrkdir"/Results/"$crashtype"_"$seed"/
 		smart_mv /private/var/www/files/"$seed"."$extension" "$wrkdir"/Results/"$crashtype"_"$seed"/
@@ -685,8 +742,8 @@ start()
 	{	
 		#increment $crashes and write to config
 		((crashes++))
-		if [ $( egrep -c "$crashesregex" "$config" ) -ge 1 ]; then
-			sed -i "s|$( egrep "$crashesregex" "$config" | tail -n 1 )|crashes: $crashes|g" "$config"
+		if [ $( egrep -c "$crashesfileregex" "$config" ) -ge 1 ]; then
+			sed -i "s|$( egrep "$crashesfileregex" "$config" | tail -n 1 )|crashes: $crashes|g" "$config"
 		else
 			echo "crashes: $crashes" >> "$config"
 		fi
@@ -695,8 +752,24 @@ start()
 		for dir in "${crashdirs[@]}"; do
 			smart_cd "$dir/"
 			#Remove Duplicates
-			if [ $( ls ./ | grep -c "Latest" ) -ge 1 ]; then
+			if [ $( ls ./ | grep -c "Latest.*plist" ) -ge 1 ]; then
 				rm ./Latest*.plist
+			fi
+			if [ $( ls ./ | grep -c "Latest.*ips" ) -ge 1 ]; then
+				rm ./Latest*.ips
+			fi
+			#Remove crap
+			if [ $( ls ./ | grep -c "ResetCounter.*plist" ) -ge 1 ]; then
+				rm ./ResetCounter*.plist
+			fi
+			if [ $( ls ./ | grep -c "ResetCounter.*ips" ) -ge 1 ]; then
+				rm ./ResetCounter*.ips
+			fi
+			if [ $( ls ./ | grep -c "LowBatteryLog.*plist" ) -ge 1 ]; then
+				rm ./LowBatteryLog*.plist
+			fi
+			if [ $( ls ./ | grep -c "LowBatteryLog.*ips" ) -ge 1 ]; then
+				rm ./LowBatteryLog*.ips
 			fi
 			#Fix for iOS7 crashes
 			for crash in *.synced; do
@@ -713,6 +786,13 @@ start()
 					comparetimes
 				fi
 			done
+			for crash in *.ips; do
+				if [ -e "$crash" ]; then
+					getcrashtime "$crash"
+					comparetimes
+				fi
+			done
+
 		done
 		smart_cd "$wrkdir/"
 	}
@@ -721,7 +801,6 @@ start()
 	{
 		j=1
 		cp "$file" ./file."$extension" &> /dev/null
-		getversion
 
 		#may not be necessary, but the idea is that as your device slows down from testing more files, it will add to the sleep time
 		slowdown()
@@ -739,9 +818,28 @@ start()
 		crashcount()
 		{
 			crashcount=$( ls $crashroot/ | grep -c plist )
+			let crashcount+=$( ls $crashroot/ | grep -c ips )
 			let crashcount+=$( ls $precrashroot/ | grep -c plist )
+			let crashcount+=$( ls $precrashroot/ | grep -c ips )
 			paniccount=$( ls $crashpanics/ | grep -c plist )
+			let paniccount+=$( ls $crashpanics/ | grep -c ips )
 			let paniccount+=$( ls $precrashpanics/ | grep -c plist )
+			let paniccount+=$( ls $precrashpanics/ | grep -c ips )
+		}
+
+		checklocked()
+		{
+			if [ $exitstatus -ne 0 ]; then
+				getversion
+				if [ $ios -le 6 ]; then
+					echo "Unknown error opening MobileSafari."
+				elif [ $ios -ge 7 ]; then
+					echo "Error opening MobileSafari, please ensure your device is unlocked."
+				fi
+				sleep 3
+				stop
+				cleanexit
+			fi
 		}
 
 		#generates files and injects them into mobilesafari
@@ -750,7 +848,11 @@ start()
 			echo "~$seed $( date '+%y.%m.%d-%H.%M.%S' )"
 			zzuf -c -r $ratio -s $seed < $file > /private/var/www/files/"$seed"."$extension"
 			echo "File generated"
-			sbopenurl http://127.0.0.1/files/"$seed"."$extension"
+
+			exitstatus="1"
+			sbopenurl http://127.0.0.1/files/"$seed"."$extension"; exitstatus="$?"
+			checklocked
+
 			echo "Safari opened"
 			sleep $time
 			safarireset
@@ -766,6 +868,7 @@ start()
 		{
 			smart_rm "$launchd"
 			##keep the plutil commands commented in case I need to dynamically generate the plist later
+			##requires erica utils (com.ericasadun.utilities)
 			#plutil -create "$launchd" &> /dev/null
 			#plutil -AbandonProcessGroup -true "$launchd" &> /dev/null
 			#plutil -Label -string com.compilingentropy.fuzzycactus "$launchd" &> /dev/null
@@ -775,7 +878,7 @@ start()
 			#plutil -key ProgramArguments -arrayadd -value start "$launchd" &> /dev/null
 			#plutil -key ProgramArguments -arrayadd -value file "$launchd" &> /dev/null
 			#plutil -RunAtLoad -true "$launchd" &> /dev/null
-#use prebuilt plist to save time
+#use prebuilt plist to save time + add portability
 echo '<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -832,7 +935,7 @@ echo '<?xml version="1.0" encoding="UTF-8"?>
 		done
 
 		echo "Fuzzing complete!"
-		fuzzycactus stop &> /dev/null &
+		stop
 
 	}
 
@@ -855,9 +958,8 @@ echo '<?xml version="1.0" encoding="UTF-8"?>
 
 		echo "Recovered successfully."
 		if [ $kernel = 0 ]; then
-			removecurrentpid
-			fuzzycactus stop
-			exit
+			stop
+			cleanexit
 		else
 			echo "Resuming fuzzing session."
 		fi
@@ -880,7 +982,6 @@ echo '<?xml version="1.0" encoding="UTF-8"?>
 stop()
 {
 	smart_cd "$wrkdir/"
-	getversion
 
 	readcrashes
 
@@ -888,25 +989,31 @@ stop()
 
 	if [[ -e "$config" ]]; then
 		#remove stime from config
-		if [ $( egrep -c "$stimeregex" "$config" ) -ge 1 ]; then
-			sed -i -r "/$stimeregex/d" "$config"
+		if [ $( egrep -c "$stimefileregex" "$config" ) -ge 1 ]; then
+			sed -i -r "\@$stimefileregex@d" "$config"
 		fi
 
 		#remove crash count from config
-		if [ $( egrep -c "$crashesregex" "$config" ) -ge 1 ]; then
-			sed -i -r "/$crashesregex/d" "$config"
+		if [ $( egrep -c "$crashesfileregex" "$config" ) -ge 1 ]; then
+			sed -i -r "\@$crashesfileregex@d" "$config"
 		fi
 
 		#set kernel=0 in config
-		if [ $( egrep -c "$kernelregex" "$config" ) -ge 1 ]; then
-			sed -i -r "/$kernelregex/d" "$config"
+		if [ $( egrep -c "$kernelfileregex" "$config" ) -ge 1 ]; then
+			sed -i -r "\@$kernelfileregex@d" "$config"
 			echo "kernel: 0" >> "$config"
+		fi
+
+		#set slowdown=0 in config
+		if [ $( egrep -c "$slowdownfileregex" "$config" ) -ge 1 ]; then
+			sed -i -r "\@$slowdownfileregex@d" "$config"
+			echo "slowdown: 0" >> "$config"
 		fi
 	fi
 
 	#remove launchdaemon
 	if [[ -e "$launchd" ]]; then
-		unload -w com.compilingentropy.fuzzycactus &> /dev/null
+		launchctl unload "$launchd" &> /dev/null
 		smart_rm "$launchd"
 	fi
 
@@ -923,7 +1030,8 @@ stop()
 	removecurrentpid
 	if [[ -e "$pidfile" ]]; then
 		if [ $( egrep -c "(^[0-9]+$)" "$pidfile" ) -ge 1 ]; then
-			while [ $( egrep -c "(^[0-9]+$)" "$pidfile" ) -ge 1 ]; do
+			while [ $( egrep -c "(^[0-9]+$)" "$pidfile" ) -ge 1 ];
+			do
 				pid=$( egrep -o "(^[0-9]+$)" "$pidfile" | head -n 1 )
 				kill -- -$( ps opgid= "$pid" | tr -d ' ' ) &> /dev/null
 				sed -i "/$pid/d" "$pidfile"
