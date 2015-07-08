@@ -8,7 +8,7 @@
 #email: compilingEntropy@gmail.com
 #twitter: @compiledEntropy
 #
-#Version 2.1
+#Version 2.1.1
 #
 #Dependencies:
 #A file to fuzz with
@@ -26,7 +26,7 @@
 #
 ###
 
-version="2.1"
+version="2.1.1"
 currentpid=$$
 action="$1"
 file="$2"
@@ -124,7 +124,7 @@ timefileregex="(^time: [0-9]+$)|(^[0-9]+[\.][0-9]+$)"
 slowdownfileregex="(^slowdown: [0-1]$)"
 kernelfileregex="(^kernel: [0-1]$)"
 crashesfileregex="(^crashes: [0-9]+$)"
-safarifileregex="(^safari: /private/var/mobile/Library/$)|(^safari: /private/var/mobile/Applications/[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}/Library/$)"
+safarifileregex="(^safari: /private/var/mobile/Library/$)|(^safari: /private/var/mobile/Applications/[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}/Library/$)|(^safari: /private/var/mobile/Containers/Data/Application/[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}/Library/$)"
 #set data pattern matching formats
 stimeregex="([0-9]{2}[\.][0-9]{2}[\.][0-9]{2}[-][0-9]{2}[\.][0-9]{2}[\.][0-9]{2}$)"
 ratioregex="([0]*[\.][0-9]+[:][0]*[\.][0-9]+$)|([0]*[\.][0-9]+$)"
@@ -132,7 +132,7 @@ timeregex="([0-9]+$)|([0-9]+[\.][0-9]+$)"
 slowdownregex="([0-1]$)"
 kernelregex="([0-1]$)"
 crashesregex="([0-9]+$)"
-safariregex="(/private/var/mobile/Library/$)|(/private/var/mobile/Applications/[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}/Library/$)"
+safariregex="(/private/var/mobile/Library/$)|(/private/var/mobile/Applications/[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}/Library/$)|(/private/var/mobile/Containers/Data/Application/[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}/Library/$)"
 
 #determine whether fuzzycactus is already running
 is_running()
@@ -182,8 +182,9 @@ safarireset()
 	killall -9 MobileSafari
 
 	smart_rm "$safarilocation/Caches/Safari" "-rf"
-	smart_rm "$safarilocation/Safari/History.plist" "-rf"
+	rm -rf   "$safarilocation"/Safari/History*
 	smart_rm "$safarilocation/Safari/SuspendState.plist" "-rf"
+	rm -rf   "$safarilocation"/WebKit/WebsiteData/*
 	smart_rm "$safarilocation/WebKit/LocalStorage/" "-rf"
 	smart_rm "$safarilocation/Webkit/Databases" "-rf"
 	rm -rf   "$safarilocation"/Cookies/*
@@ -220,8 +221,10 @@ getsafarilocation()
 		getversion
 		if [ $ios -le 6 ]; then
 			safarilocation="/private/var/mobile/Library/"
-		elif [ $ios -ge 7 ]; then
+		elif [ $ios -eq 7 ]; then
 			safarilocation=$( find /private/var/mobile/Applications/ -name 'MobileSafari.app' | sed 's|MobileSafari.app|Library/|g' )
+		elif [ $ios -ge 8 ]; then
+			safarilocation=$( find /private/var/mobile/Containers/Data/Application/ -name 'Safari' | sed 's|Safari||g' )
 		fi
 
 		sed -i -r "\@$safarifileregex@d" "$config"
@@ -259,7 +262,7 @@ start()
 	fi
 
 	#determine file extension, warn if none is found
-	extension=$( echo $file | sed 's|.*\.||g' | tr '[:upper:]' '[:lower:]' )
+	extension=$( echo $file | sed -r -e 's|.*\.||g' -e 's|(.*)|\L&|' )
 	if [[ -z "$extension" ]]; then
 		echo "Warning:"
 		echo "No file extension found on input file!"
@@ -372,6 +375,19 @@ start()
 									dpkg -i ./zzuf_0.13-1_iphoneos-arm.deb
 									if [ $( dpkg -l | grep -c zzuf ) -eq 1 ]; then
 										smart_rm ./zzuf_0.13-1_iphoneos-arm.deb
+									fi
+
+									#patch zzuf for arm64 if necessary
+									if [[ "$( uname -p )" == "arm64" ]]; then
+										sed -i 's/\x00\x30\x93\xe4/\x00\x30\x93\xe5/g;s/\x00\x30\xd3\xe4/\x00\x30\xd3\xe5/g;' "$( which zzuf )"
+										#test the patch
+										zzuf -h &> /dev/null
+										if [ $? -ne 0 ]; then
+											echo 'zzuf arm64 patch failed!'
+											return 1
+										else
+											echo "Successfully patched zzuf for arm64."
+										fi
 									fi
 								fi
 
@@ -771,7 +787,7 @@ start()
 			if [ $( ls ./ | grep -c "LowBatteryLog.*ips" ) -ge 1 ]; then
 				rm ./LowBatteryLog*.ips
 			fi
-			#Fix for iOS7 crashes
+			#Fix for iOS7+ crashes
 			for crash in *.synced; do
 				if [ -e "$crash" ]; then
 					if [ $( echo "$crash" | grep -c ".synced" ) -ge 1 ]; then

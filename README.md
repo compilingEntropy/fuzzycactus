@@ -21,3 +21,12 @@ Usage:
 `fuzzycactus [action] [file] [options]`  
 `fuzzycactus [start/stop/watch/help] [./file.mov] [-s] [-t 11] [-r 0.0001:0.001] [-k]`  
 For more usage information, please do `fuzzycactus help` and read the help text.
+
+Installation:  
+The preferred installation method is to add the following repo to Cydia, and install the fuzzycactus package:
+`http://tihmstar.net/repo`  
+Alternatively, you can install by running the following commands on your device:  
+```
+curl -k https://raw.githubusercontent.com/compilingEntropy/fuzzycactus/master/fuzzycactus > /usr/bin/fuzzycactus
+chmod +x /usr/bin/fuzzycactus
+```
