@@ -8,7 +8,7 @@
 #email: compilingEntropy@gmail.com
 #twitter: @compiledEntropy
 #
-#Version 2.1.1
+#Version 2.1.2
 #
 #Dependencies:
 #A file to fuzz with
@@ -26,7 +26,7 @@
 #
 ###
 
-version="2.1.1"
+version="2.1.2"
 currentpid=$$
 action="$1"
 file="$2"
