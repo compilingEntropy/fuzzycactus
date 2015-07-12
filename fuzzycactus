@@ -8,7 +8,7 @@
 #email: compilingEntropy@gmail.com
 #twitter: @compiledEntropy
 #
-#Version 2.1.2
+#Version 2.1.3
 #
 #Dependencies:
 #A file to fuzz with
@@ -26,7 +26,7 @@
 #
 ###
 
-version="2.1.2"
+version="2.1.3"
 currentpid=$$
 action="$1"
 file="$2"
@@ -370,7 +370,7 @@ start()
 							echo "Installing required dependencies..."
 							for package in "${missing[@]}"; do
 								if [[ "$package" != "zzuf" ]]; then
-									apt-get install "$package"
+									apt-get -y install "$package"
 								else
 									wget https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb --no-check-certificate
 									dpkg -i ./zzuf_0.13-1_iphoneos-arm.deb
@@ -666,6 +666,7 @@ start()
 	#pull times out of the crash files
 	getcrashtime()
 	{
+		#includes workaround for apparent race condition where crash file exists but has not been populated
 		for (( k = 0; k < 3; k++ )); do
 			date=( $( grep "Date" "$1" | egrep -o "$dateregex" ) )
 			if [[ -z "$date" ]]; then
@@ -749,7 +750,7 @@ start()
 	foundit()
 	{
 		if [ $( echo "$crash" | grep -c "panic" ) -eq 0 ]; then
-			crashtype=$( echo "$crash" | sed 's|_.*||g' | sed 's|-.*||g' | sed 's|\..*||g' ) #type of crash determined by whatever comes before '-', '_', or '.' in crash name
+			crashtype=$( echo "$crash" | sed -e 's|com.apple.[a-zA-Z]*\.||g' -e 's|_.*||g' -e 's|-.*||g' -e 's|\..*||g' ) #type of crash determined by whatever comes before '-', '_', or '.' in crash name
 		else
 			crashtype="panic"
 		fi
