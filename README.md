@@ -19,7 +19,7 @@ Always remember: Before you begin fuzzing, go to 'Settings' > 'General' > 'About
 
 Usage:  
 `fuzzycactus [action] [file] [options]`  
-`fuzzycactus [start/stop/watch/help] [./file.mov] [-s] [-t 11] [-r 0.0001:0.001] [-k]`  
+`fuzzycactus [start/stop/watch/update/help] [./file.mov] [-s] [-t 11] [-r 0.0001:0.001] [-k]`  
 For more usage information, please do `fuzzycactus help` and read the help text.
 
 Installation:  

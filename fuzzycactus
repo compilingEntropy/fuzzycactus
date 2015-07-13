@@ -1,37 +1,37 @@
 #!/bin/bash
 
 ###
-#
-#fuzzycactus-- A tool which automates and simplifies the on-device fuzzing of MobileSafari
-#View the source for this project on github: https://github.com/compilingEntropy/fuzzycactus
-#Report bugs or ask questions
-#email: compilingEntropy@gmail.com
-#twitter: @compiledEntropy
-#
-#Version 2.1.4
-#
-#Dependencies:
-#A file to fuzz with
-#zzuf
-#sbutils
-#bc
-#lighttpd
-#adv-cmds
-#cURL
-#wget
-#coreutils
-#
-#Installs to /usr/bin/fuzzycactus
-#Working directory is /private/var/fuzzycactus/
-#
+# 
+# fuzzycactus-- A tool which automates and simplifies the on-device fuzzing of MobileSafari
+# View the source for this project on github: https://github.com/compilingEntropy/fuzzycactus
+# Report bugs or ask questions
+# email: compilingEntropy@gmail.com
+# twitter: @compiledEntropy
+# 
+# Version 2.1.5
+# 
+# Dependencies:
+# A file to fuzz with
+# zzuf
+# sbutils
+# bc
+# lighttpd
+# adv-cmds
+# cURL
+# wget
+# coreutils
+# 
+# Installs to /usr/bin/fuzzycactus
+# Working directory is /private/var/fuzzycactus/
+# 
 ###
 
-version="2.1.4"
+version="2.1.5"
 currentpid=$$
 action="$1"
 file="$2"
 params=( $( for arg in $@; do echo "$arg"; done ) )
-usage="Usage: fuzzycactus [action] [file] [options]\nfuzzycactus [start/stop/watch/help] [./file.mov] [-s] [-t 11] [-r 0.0001:0.001] [-k]"
+usage="Usage: fuzzycactus [action] [file] [options]\nfuzzycactus [start/stop/watch/update/help] [./file.mov] [-s] [-t 11] [-r 0.0001:0.001] [-k]"
 wrkdir="/private/var/fuzzycactus"
 config="$wrkdir/fuzzycactus.conf"
 launchd="/System/Library/LaunchDaemons/com.compilingentropy.fuzzycactus.plist"
@@ -133,8 +133,9 @@ slowdownregex="([0-1]$)"
 kernelregex="([0-1]$)"
 crashesregex="([0-9]+$)"
 safariregex="(/private/var/mobile/Library/$)|(/private/var/mobile/Applications/[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}/Library/$)|(/private/var/mobile/Containers/Data/Application/[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}/Library/$)"
-#bonus regex for pulling dates out of crash files
+#bonus regexes
 dateregex="([0-9]{4}.[0-9]{2}.[0-9]{2}.[0-9]{2}.[0-9]{2}.[0-9]{2})"
+versionregex="([0-9]+[\.][0-9]+[\.][0-9]+|[0-9]+[\.][0-9]+)"
 
 #determine whether fuzzycactus is already running
 is_running()
@@ -160,9 +161,9 @@ is_running()
 getversion()
 {
 	ios=$( sbdevice -V )
-	if [ $( echo "$ios" | grep -c "([0-9]+[\.][0-9]+[\.][0-9]+|[0-9]+[\.][0-9]+)" ) -ne 1 ]; then
+	if [ $( echo "$ios" | egrep -c "$versionregex" ) -ne 1 ]; then
 		if [[ -e "$sysversion" ]]; then
-			ios=$( grep -A 1 "ProductVersion" "$sysversion" | egrep -o "([0-9]+[\.][0-9]+[\.][0-9]+|[0-9]+[\.][0-9]+)" )
+			ios=$( grep -A 1 "ProductVersion" "$sysversion" | egrep -o "$versionregex" )
 		else
 			echo "This version of iOS (whatever it is) is unsupported, probably."
 			cleanexit
@@ -1090,6 +1091,55 @@ watch()
 	fi
 }
 
+#main update function, runs when 'update' is the given action
+update()
+{
+	#if you fork this, update this variable with the link to the raw fuzzycactus on your repo
+	repo="https://raw.githubusercontent.com/compilingEntropy/fuzzycactus/master/fuzzycactus"
+
+	curl -sSk "$repo" > "$wrkdir"/fuzzycactus_update
+	exitstatus="$?"
+	if (( $exitstatus != 0 )); then
+		echo "Unable to contact the update server, try again later."
+		return 1
+	fi
+	remoteversion="$( egrep "^version=\"$versionregex\"$" "$wrkdir"/fuzzycactus_update | head -n 1 | egrep -o "$versionregex" 2> /dev/null )"
+
+	if [[ "$( echo -e "$version\n$remoteversion" | sort -r -V | head -n 1 )" != "$version" ]]; then
+		echo "Update found!"
+		echo "Current version: $version"
+		echo "Remote version: $remoteversion"
+		while (true);
+		do
+			echo "Would you like to update? (y/n)"
+			read answer
+			if [[ "$answer" =~ [Nn] ]]; then
+				smart_rm "$wrkdir"/fuzzycactus_update
+				return 1
+			elif [[ "$answer" =~ [Yy] ]]; then
+				echo "Continuing..."
+				cat "$wrkdir"/fuzzycactus_update > "$( which fuzzycactus )"
+				smart_rm "$wrkdir"/fuzzycactus_update
+				newversion="$( egrep "^version=\"$versionregex\"$" "$( which fuzzycactus )" | head -n 1 | egrep -o "$versionregex" )"
+				if [[ "$newversion" == "$remoteversion" ]]; then
+					echo "Uptated successfully!"
+					return 0
+				else
+					echo "Update failed :/"
+					smart_rm "$wrkdir"/fuzzycactus_update
+					return 1
+				fi
+			else
+				echo "Not a valid reponse; valid responses are 'y', or 'n'."
+			fi
+		done
+	else
+		echo "No updates available."
+		smart_rm "$wrkdir"/fuzzycactus_update
+		return 0
+	fi
+}
+
 #main help function, runs when 'help' is the given action
 #prints detailed information
 helper()
@@ -1110,6 +1160,7 @@ stop          -Stops the current fuzzing session, if one is running, and display
 watch         -Attatches to the current fuzzing session, if one is running. This is essentially the
               equivalent of doing 'tail -f $wrkdir/fuzz.log'. This action takes
               no files or options.
+update        -Downloads a new version of fuzzycactus from GitHub if an update is available.
 help          -Displays this help message. This action takes no files or options.
 
 Options:
@@ -1201,6 +1252,9 @@ elif [[ "$action" == "stop" ]]; then
 	exit
 elif [[ "$action" == "watch" ]]; then
 	watch
+	cleanexit
+elif [[ "$action" == "update" ]]; then
+	update
 	cleanexit
 elif [[ "$action" == "help" ]]; then
 	helper
