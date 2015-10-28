@@ -8,7 +8,7 @@
 # email: compilingEntropy@gmail.com
 # twitter: @compiledEntropy
 # 
-# Version 2.1.5
+# Version 2.1.6
 # 
 # Dependencies:
 # A file to fuzz with
@@ -26,7 +26,7 @@
 # 
 ###
 
-version="2.1.5"
+version="2.1.6"
 currentpid=$$
 action="$1"
 file="$2"
@@ -336,8 +336,10 @@ start()
 				echo "Would you like me to try installing them? (y/n)"
 				read answer
 				if [[ "$answer" =~ [Nn] ]]; then
-						echo "To install most of the dependencies required, run the following as root:"
-						echo "apt-get install ${missing[@]/zzuf/}"
+						if [[ -n "${missing[@]/zzuf/}" ]]; then
+							echo "To install most of the dependencies required, run the following as root:"
+							echo "apt-get install ${missing[@]/zzuf/}"
+						fi
 						if [ $haszzuf -eq 0 ]; then
 							echo "You can get zzuf at 'https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb'."
 						fi
@@ -379,15 +381,33 @@ start()
 										smart_rm ./zzuf_0.13-1_iphoneos-arm.deb
 									fi
 
+									#sign zzuf, required if we're on iOS 9
+									getversion
+									if [ $ios -ge 9 ]; then
+										ldid -S "$( which zzuf )"
+									fi
+
 									#patch zzuf for arm64 if necessary
 									if [[ "$( uname -p )" == "arm64" ]]; then
 										sed -i 's/\x00\x30\x93\xe4/\x00\x30\x93\xe5/g;s/\x00\x30\xd3\xe4/\x00\x30\xd3\xe5/g;' "$( which zzuf )"
-										#test the patch
-										zzuf -h &> /dev/null
-										if [ $? -ne 0 ]; then
+									fi
+
+									#test the patches
+									zzuf -h &> /dev/null
+									if [ $? -ne 0 ]; then
+										if [ $ios -ge 9 ]; then
+											echo "Failed to sign zzuf for iOS 9."
+										fi
+										if [[ "$( uname -p )" == "arm64" ]]; then
 											echo 'zzuf arm64 patch failed!'
-											return 1
-										else
+										fi
+
+										return 1
+									else
+										if [ $ios -ge 9 ]; then
+											echo "Successfully signed zzuf for iOS 9."
+										fi
+										if [[ "$( uname -p )" == "arm64" ]]; then
 											echo "Successfully patched zzuf for arm64."
 										fi
 									fi
@@ -418,8 +438,10 @@ start()
 						echo "This script was unable to set up the required dependencies for you because you're not running this script as root."
 						echo "Try running this script again as root, or complete the installation of missing dependencies manually."
 					fi
-					echo "To install most of the dependencies required, run the following as root:"
-					echo "apt-get install ${missing[@]/zzuf/}"
+					if [[ -n "${missing[@]/zzuf/}" ]]; then
+						echo "To install most of the dependencies required, run the following as root:"
+						echo "apt-get install ${missing[@]/zzuf/}"
+					fi
 					if [ $haszzuf -eq 0 ]; then
 						echo "You can get zzuf at 'https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb'."
 					fi
