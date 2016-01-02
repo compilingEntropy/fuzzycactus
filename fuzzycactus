@@ -8,7 +8,7 @@
 # email: compilingEntropy@gmail.com
 # twitter: @compiledEntropy
 # 
-# Version 2.1.6
+# Version 2.1.7
 # 
 # Dependencies:
 # A file to fuzz with
@@ -26,7 +26,7 @@
 # 
 ###
 
-version="2.1.6"
+version="2.1.7"
 currentpid=$$
 action="$1"
 file="$2"
@@ -142,12 +142,12 @@ is_running()
 {
 	isrunning=0
 	if [[ -e "$pidfile" ]]; then
-		if [ $( egrep -c "(^[0-9]+$)" "$pidfile" ) -ge 1 ]; then
+		if (( $( egrep -c "(^[0-9]+$)" "$pidfile" ) >= 1 )); then
 			pidlist=( $( egrep -o "(^[0-9]+$)" "$pidfile" ) )
 			pidlist=( "${pidlist[@]/$currentpid/}" )
 			for pid in "${pidlist[@]}"; do
 				kill -0 "$pid" &> /dev/null; isdead="$?"
-				if [ $isdead -eq 0 ]; then
+				if (( $isdead == 0 )); then
 					isrunning=1
 				fi
 			done
@@ -161,7 +161,7 @@ is_running()
 getversion()
 {
 	ios=$( sbdevice -V )
-	if [ $( echo "$ios" | egrep -c "$versionregex" ) -ne 1 ]; then
+	if (( $( echo "$ios" | egrep -c "$versionregex" ) != 1 )); then
 		if [[ -e "$sysversion" ]]; then
 			ios=$( grep -A 1 "ProductVersion" "$sysversion" | egrep -o "$versionregex" )
 		else
@@ -170,7 +170,7 @@ getversion()
 		fi
 	fi
 	ios=$( echo "$ios" | sed "s|\..*||g" )
-	if [ $( echo "$ios" | egrep -c "([0-9]+)" ) -ne 1 ]; then
+	if (( $( echo "$ios" | egrep -c "([0-9]+)" ) != 1 )); then
 		echo "Error: Could not determine iOS version!"
 		cleanexit
 	fi
@@ -199,7 +199,7 @@ readcrashes()
 {
 	crashes=0
 	if [[ -e "$config" ]]; then
-		if [ $( egrep -c "$crashesfileregex" "$config" ) -ge 1 ]; then
+		if (( $( egrep -c "$crashesfileregex" "$config" ) >= 1 )); then
 			crashes=$( egrep "$crashesfileregex" "$config" | tail -n 1 | egrep -o "$crashesregex" )
 		fi
 	fi
@@ -209,7 +209,7 @@ readcrashes()
 readsafari()
 {
 	if [[ -e "$config" ]]; then
-		if [ $( egrep -c "$safarifileregex" "$config" ) -ge 1 ]; then
+		if (( $( egrep -c "$safarifileregex" "$config" ) >= 1 )); then
 			safarilocation=$( egrep "$safarifileregex" "$config" | tail -n 1 | egrep -o "$safariregex" )
 		fi
 	fi
@@ -221,11 +221,11 @@ getsafarilocation()
 	readsafari
 	if [[ -z "$safarilocation" || ! -d "$safarilocation" ]]; then
 		getversion
-		if [ $ios -le 6 ]; then
+		if (( $ios <= 6 )); then
 			safarilocation="/private/var/mobile/Library/"
-		elif [ $ios -eq 7 ]; then
+		elif (( $ios == 7 )); then
 			safarilocation=$( find /private/var/mobile/Applications/ -name 'MobileSafari.app' | sed 's|MobileSafari.app|Library/|g' )
-		elif [ $ios -ge 8 ]; then
+		elif (( $ios >= 8 )); then
 			safarilocation=$( find /private/var/mobile/Containers/Data/Application/ -name 'Safari' | sed 's|Safari||g' )
 		fi
 
@@ -233,7 +233,7 @@ getsafarilocation()
 		echo "safari: $safarilocation" >> "$config"
 
 		#check to see if `find` messed up
-		if [ $( echo "$safarilocation" | egrep -c "$safariregex" ) -ne 1 ]; then
+		if (( $( echo "$safarilocation" | egrep -c "$safariregex" ) != 1 )); then
 			echo "Invalid path detected for MobileSafari!(?)"
 			cleanexit
 		fi
@@ -271,8 +271,7 @@ start()
 		echo "This can confuse MobileSafari's file handler, it is recommended that you add a file extension to your file."
 		while (true);
 		do
-			echo "Would you like to continue anyway? (y/n)"
-			read answer
+			read -p "Would you like to continue anyway? (y/n): " answer
 			if [[ "$answer" =~ [Nn] ]]; then
 				cleanexit
 			elif [[ "$answer" =~ [Yy] ]]; then
@@ -316,7 +315,7 @@ start()
 				else
 					amount=1
 				fi
-				if [ $( dpkg -l | grep -c "$package" ) -lt $amount ]; then
+				if (( $( dpkg -l | grep -c "$package" ) < $amount )); then
 					echo "Missing '$package'"'!'
 					missing=( "${missing[@]}" "$package" )
 					hasdepends=0
@@ -329,18 +328,17 @@ start()
 		checkdepends
 
 		#not all dependencies exist, try to get them
-		if [ $hasdepends -eq 0 ]; then
+		if (( $hasdepends == 0 )); then
 			echo "Not all dependencies were met."
 			while (true);
 			do
-				echo "Would you like me to try installing them? (y/n)"
-				read answer
+				read -p "Would you like me to try installing them? (y/n): " answer
 				if [[ "$answer" =~ [Nn] ]]; then
 						if [[ -n "${missing[@]/zzuf/}" ]]; then
 							echo "To install most of the dependencies required, run the following as root:"
 							echo "apt-get install ${missing[@]/zzuf/}"
 						fi
-						if [ $haszzuf -eq 0 ]; then
+						if (( $haszzuf == 0 )); then
 							echo "You can get zzuf at 'https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb'."
 						fi
 						return 1
@@ -368,45 +366,49 @@ start()
 						isroot=0
 					fi
 
-					if [ $isroot -ge 1 ]; then
-						if [ $( dpkg -l | grep apt7 | grep tool | grep -c Debian ) -eq 1 ]; then
+					if (( $isroot >= 1 )); then
+						if (( $( dpkg -l | grep apt7 | grep tool | grep -c Debian ) == 1 )); then
 							echo "Installing required dependencies..."
 							for package in "${missing[@]}"; do
 								if [[ "$package" != "zzuf" ]]; then
 									apt-get -y install "$package"
-								else
-									wget https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb --no-check-certificate
-									dpkg -i ./zzuf_0.13-1_iphoneos-arm.deb
-									if [ $( dpkg -l | grep -c zzuf ) -eq 1 ]; then
-										smart_rm ./zzuf_0.13-1_iphoneos-arm.deb
+									if [[ "$package" == "com.innoying.sbutils" ]]; then
+										#fix sbopenurl on ios9 + arm64
+										getversion
+										if (( $ios >= 9 )) && [[ "$( uname -p )" == "arm64" ]]; then
+											smart_rm "/usr/bin/sbopenurl"
+											wget https://dl.dropboxusercontent.com/u/3360346/sbopenurl -O /usr/bin/sbopenurl --no-check-certificate
+											chmod +x /usr/bin/sbopenurl
+										fi
 									fi
-
-									#sign zzuf, required if we're on iOS 9
+								else
 									getversion
-									if [ $ios -ge 9 ]; then
-										ldid -S "$( which zzuf )"
+									if (( $ios >= 9 )); then
+										wget https://dl.dropboxusercontent.com/u/3360346/zzuf_0.13-2_iphoneos-arm.deb -O "$wrkdir"/zzuf.deb --no-check-certificate
+									else
+										wget https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb -O "$wrkdir"/zzuf.deb --no-check-certificate
+									fi
+									dpkg -i "$wrkdir"/zzuf.deb
+									if (( $( dpkg -l | grep -c zzuf ) == 1 )); then
+										smart_rm "$wrkdir"/zzuf.deb
 									fi
 
 									#patch zzuf for arm64 if necessary
-									if [[ "$( uname -p )" == "arm64" ]]; then
+									if (( $ios < 9 )) && [[ "$( uname -p )" == "arm64" ]]; then
 										sed -i 's/\x00\x30\x93\xe4/\x00\x30\x93\xe5/g;s/\x00\x30\xd3\xe4/\x00\x30\xd3\xe5/g;' "$( which zzuf )"
 									fi
 
 									#test the patches
 									zzuf -h &> /dev/null
-									if [ $? -ne 0 ]; then
-										if [ $ios -ge 9 ]; then
-											echo "Failed to sign zzuf for iOS 9."
-										fi
+									if (( $? != 0 )); then
 										if [[ "$( uname -p )" == "arm64" ]]; then
 											echo 'zzuf arm64 patch failed!'
+											echo 'Try https://dl.dropboxusercontent.com/u/3360346/zzuf_0.13-2_iphoneos-arm.deb and report your iOS version / results.'
+										else
+											echo 'zzuf failed for some reason.'
 										fi
-
 										return 1
 									else
-										if [ $ios -ge 9 ]; then
-											echo "Successfully signed zzuf for iOS 9."
-										fi
 										if [[ "$( uname -p )" == "arm64" ]]; then
 											echo "Successfully patched zzuf for arm64."
 										fi
@@ -415,18 +417,19 @@ start()
 
 								#set package as 'auto-installed' rather than manually installed
 								line=$( grep "$package" -n "$extended_states" | sed "s|:.*||g" )
-								if [ $( echo "$line" | egrep -c "([0-9]+)" ) -eq 1 ]; then
+								if (( $( echo "$line" | egrep -c "([0-9]+)" ) == 1 )); then
 									((line++))
 									sed -i "$line""s|0|1|g" "$extended_states"
 								fi
 							done
+							
 							checkdepends
-							if [ $hasdepends -eq 1 ]; then
+							if (( $hasdepends == 1 )); then
 								echo "Done! Continuing..."
 								break
 							else
 								echo "Something went wrong with the install, please install the dependencies you're missing manually or try again."
-								if [ $isroot -eq 2 ]; then
+								if (( $isroot == 2 )); then
 									echo "Sounds like you weren't actually root, please run this script again as root or complete setup manually."
 								fi
 							fi
@@ -442,7 +445,7 @@ start()
 						echo "To install most of the dependencies required, run the following as root:"
 						echo "apt-get install ${missing[@]/zzuf/}"
 					fi
-					if [ $haszzuf -eq 0 ]; then
+					if (( $haszzuf == 0 )); then
 						echo "You can get zzuf at 'https://dl.dropboxusercontent.com/u/33697434/zzuf_0.13-1_iphoneos-arm.deb'."
 					fi
 					return 1
@@ -457,8 +460,7 @@ start()
 			echo "No lighttpd.conf file found in /private/etc/!"
 			while (true);
 			do
-				echo "Would you like me to set one up for you? (y/n)"
-				read answer
+				read -p "Would you like me to set one up for you? (y/n): " answer
 				if [[ "$answer" =~ [Nn] ]]; then
 					echo "You'll need to set one up yourself then, see https://ghostbin.com/paste/275n6 for an example."
 					return 1
@@ -481,14 +483,14 @@ start()
 		fi
 
 		#check document-root in server config
-		if [ $( egrep -c '(^server.document-root = "/var/www/"[[:space:]]*$|^server.document-root = "/var/www/"[[:space:]]+[#]+.*$)' "$lighttpdconf" ) -ne 1 ]; then
+		if (( $( egrep -c '(^server.document-root = "/var/www/"[[:space:]]*$|^server.document-root = "/var/www/"[[:space:]]+[#]+.*$)' "$lighttpdconf" ) != 1 )); then
 			echo "You must have your document root set up in /private/var/www/"
 			echo "Please modify your $lighttpdconf file accordingly."
 			return 1
 		fi
 
 		#check server port is 80
-		if [ $( egrep -c '(^server.port = 80[[:space:]]*$|^server.port = 80[[:space:]]+[#]+.*$)' "$lighttpdconf" ) -ne 1 ]; then
+		if (( $( egrep -c '(^server.port = 80[[:space:]]*$|^server.port = 80[[:space:]]+[#]+.*$)' "$lighttpdconf" ) != 1 )); then
 			echo "You must have your server port set to 80."
 			echo "Please modify your $lighttpdconf file accordingly."
 			return 1
@@ -497,7 +499,7 @@ start()
 		#start server
 		exitstatus="1"
 		curl -# 127.0.0.1 &> /dev/null; exitstatus="$?"
-		if [ $exitstatus -ne 0 ]; then
+		if (( $exitstatus != 0 )); then
 			echo "No server running, attempting to start server..."
 			lighttpd -f /etc/lighttpd.conf
 
@@ -513,7 +515,7 @@ start()
 				curl -# 127.0.0.1 &> /dev/null; exitstatus="$?"
 				counter=$( bc <<< "scale=1;$counter+ 0.3" )
 			done
-			if [ $exitstatus -eq 0 ]; then
+			if (( $exitstatus == 0 )); then
 				echo "Server started."
 			else
 				echo "Unable to start server."
@@ -522,7 +524,7 @@ start()
 		fi
 
 		#neuter crash reporting
-		if [ $( egrep -c "(^127.0.0.1[[:space:]]+iphonesubmissions.apple.com$)" /private/etc/hosts ) -lt 1 ]; then
+		if (( $( egrep -c "(^127.0.0.1[[:space:]]+iphonesubmissions.apple.com$)" /private/etc/hosts ) < 1 )); then
 			if [[ "$( whoami )" != "root" ]]; then
 				echo "Run this script again with root access (this is only required once)."
 				return 1
@@ -536,7 +538,7 @@ start()
 
 		#check to see if fuzzycactus is already running
 		is_running
-		if [ $isrunning -eq 1 ]; then
+		if (( $isrunning == 1 )); then
 			echo "fuzzycactus is already running!"
 			echo "Do 'fuzzycactus watch' to attach to the current process."
 			echo "Do 'fuzzycactus stop' to end the current fuzzing session."
@@ -550,7 +552,7 @@ start()
 
 	#run 'checks', exit if the checks fail
 	checks
-	if [ $? -ne 2 ]; then
+	if (( $? != 2 )); then
 		cleanexit
 	fi
 
@@ -567,20 +569,20 @@ start()
 	#config file
 	if [[ -e "$config" ]]; then
 		#read values from config
-		if [ $( egrep -c "$stimefileregex" "$config" ) -ge 1 ]; then
+		if (( $( egrep -c "$stimefileregex" "$config" ) >= 1 )); then
 			stime=$( egrep "$stimefileregex" "$config" | tail -n 1 | egrep -o "$stimeregex" )
 			didpanic=1
 		fi
-		if [ $( egrep -c "$ratiofileregex" "$config" ) -ge 1 ]; then
+		if (( $( egrep -c "$ratiofileregex" "$config" ) >= 1 )); then
 			ratio=$( egrep "$ratiofileregex" "$config" | tail -n 1 | egrep -o "$ratioregex" )
 		fi
-		if [ $( egrep -c "$timefileregex" "$config" ) -ge 1 ]; then
+		if (( $( egrep -c "$timefileregex" "$config" ) >= 1 )); then
 			time=$( egrep "$timefileregex" "$config" | tail -n 1 | egrep -o "$timeregex" )
 		fi
-		if [ $( egrep -c "$slowdownfileregex" "$config" ) -ge 1 ]; then
+		if (( $( egrep -c "$slowdownfileregex" "$config" ) >= 1 )); then
 			slowdown=$( egrep "$slowdownfileregex" "$config" | tail -n 1 | egrep -o "$slowdownregex" )
 		fi
-		if [ $( egrep -c "$kernelfileregex" "$config" ) -ge 1 ]; then
+		if (( $( egrep -c "$kernelfileregex" "$config" ) >= 1 )); then
 			kernel=$( egrep "$kernelfileregex" "$config" | tail -n 1 | egrep -o "$kernelregex" )
 		fi
 		readcrashes
@@ -617,7 +619,7 @@ start()
 	done
 
 	#check the time
-	if [ $( echo "$time" | egrep -c "$timeregex" ) -eq 0 ]; then
+	if (( $( echo "$time" | egrep -c "$timeregex" ) == 0 )); then
 		echo "The time provided isn't valid."
 		echo "Please provide a new time."
 		echo -e "$usage"
@@ -625,7 +627,7 @@ start()
 	fi
 
 	#check the ratio
-	if [ $( echo $ratio | egrep -c "$ratioregex" ) -eq 0 ]; then
+	if (( $( echo $ratio | egrep -c "$ratioregex" ) == 0 )); then
 		echo "The ratio provided isn't valid."
 		echo "Please provide a new ratio."
 		echo -e "$usage"
@@ -633,55 +635,55 @@ start()
 	fi
 	range=( $( echo $ratio | sed "s|:| |g" ) )
 	if [[ -n "${range[1]}" ]]; then
-		if [ $( echo "${range[0]} > ${range[1]}" | bc ) -eq 1 ]; then
+		if (( $( echo "${range[0]} > ${range[1]}" | bc ) == 1 )); then
 			echo "The ratio provided isn't valid."
 			echo "The first ratio argument must be smaller than the second ratio argument."
 			echo "Please provide a new ratio."
 			echo -e "$usage"
 			cleanexit
-		elif [ $( echo "${range[0]} == ${range[1]}" | bc ) -eq 1 ]; then
+		elif (( $( echo "${range[0]} == ${range[1]}" | bc ) == 1 )); then
 			ratio="${range[0]}"
 		fi
 	fi
 
 	#write values to config
-	if [ $( egrep -c "$ratiofileregex" "$config" ) -ge 1 ]; then
+	if (( $( egrep -c "$ratiofileregex" "$config" ) >= 1 )); then
 		sed -i "s|$( egrep "$ratiofileregex" "$config" | tail -n 1 )|ratio: $ratio|g" "$config"
 	else
 		echo "ratio: $ratio" >> "$config"
 	fi
-	if [ $( egrep -c "$timefileregex" "$config" ) -ge 1 ]; then
+	if (( $( egrep -c "$timefileregex" "$config" ) >= 1 )); then
 		sed -i "s|$( egrep "$timefileregex" "$config" | tail -n 1 )|time: $time|g" "$config"
 	else
 		echo "time: $time" >> "$config"
 	fi
-	if [ $( egrep -c "$slowdownfileregex" "$config" ) -ge 1 ]; then
+	if (( $( egrep -c "$slowdownfileregex" "$config" ) >= 1 )); then
 		sed -i "s|$( egrep "$slowdownfileregex" "$config" | tail -n 1 )|slowdown: $slowdown|g" "$config"
 	else
 		echo "slowdown: $slowdown" >> "$config"
 	fi
-	if [ $( egrep -c "$kernelfileregex" "$config" ) -ge 1 ]; then
+	if (( $( egrep -c "$kernelfileregex" "$config" ) >= 1 )); then
 		sed -i "s|$( egrep "$kernelfileregex" "$config" | tail -n 1 )|kernel: $kernel|g" "$config"
 	else
 		echo "kernel: $kernel" >> "$config"
 	fi
 
 	#tell what settings we're using if they aren't the default settings
-	smart_touch "./fuzz.log"
+	smart_touch "$wrkdir/fuzz.log"
 	if (( $didpanic == 0 || $kernel == 1 )); then
-		if [ $kernel -ne 0 ]; then
-			echo "Resume after panic: Enabled" | tee -a "./fuzz.log"
+		if (( $kernel != 0 )); then
+			echo "Resume after panic: Enabled" | tee -a "$wrkdir/fuzz.log"
 		fi
-		if [ $slowdown -ne 0 ]; then
-			echo "Slowdown: Enabled" | tee -a "./fuzz.log"
+		if (( $slowdown != 0 )); then
+			echo "Slowdown: Enabled" | tee -a "$wrkdir/fuzz.log"
 		fi
 		if [[ "$time" != "11" ]]; then
-			echo "Sleep time: $time" | tee -a "./fuzz.log"
+			echo "Sleep time: $time" | tee -a "$wrkdir/fuzz.log"
 		fi
 		if [[ "$ratio" != "0.0001:0.001" ]]; then
-			echo "Mutation ratio: $ratio" | tee -a "./fuzz.log"
+			echo "Mutation ratio: $ratio" | tee -a "$wrkdir/fuzz.log"
 		else
-			echo "Mutation ratio: $ratio" >> "./fuzz.log"
+			echo "Mutation ratio: $ratio" >> "$wrkdir/fuzz.log"
 		fi
 	fi
 
@@ -691,7 +693,7 @@ start()
 	{
 		#includes workaround for apparent race condition where crash file exists but has not been populated
 		for (( k = 0; k < 3; k++ )); do
-			date=( $( grep "Date" "$1" | egrep -o "$dateregex" ) )
+			date=( $( egrep -m 1 -i "(Date|timestamp)" "$1" | egrep -o "$dateregex" ) )
 			if [[ -z "$date" ]]; then
 				sleep 1
 				echo "Waiting for crash to finish generating..."
@@ -705,8 +707,9 @@ start()
 				break
 			fi
 		done
-		if [ $k -eq 3 ]; then
-			echo "Uh, usualliy it doesn't take this long. You may want to take a closer look at this."
+		if (( $k == 3 )); then
+			echo "Uh, usually it doesn't take this long. You may want to take a closer look at this."
+			return 1
 		fi
 	}
 
@@ -715,7 +718,7 @@ start()
 	{
 		if [[ -z "$stime" ]]; then
 			stime="$( date '+%y.%m.%d-%H.%M.%S' )"
-			if [ $( egrep -c "$stimefileregex" "$config" ) -ge 1 ]; then
+			if (( $( egrep -c "$stimefileregex" "$config" ) >= 1 )); then
 				sed -i "s|$( egrep "$stimefileregex" "$config" | tail -n 1 )|stime: $stime|g" "$config"
 			else
 				echo "stime: $stime" >> "$config"
@@ -734,37 +737,37 @@ start()
 	#determines if a crash has happened since a given time
 	comparetimes()
 	{
-		if [ $crashyear -eq $syear ]; then
+		if (( $crashyear == $syear )); then
 			
-			if [ $crashmonth -eq $smonth ]; then
+			if (( $crashmonth == $smonth )); then
 				
-				if [ $crashday -eq $sday ]; then
+				if (( $crashday == $sday )); then
 					
-					if [ $crashhour -eq $shour ]; then
+					if (( $crashhour == $shour )); then
 
-						if [ $crashminute -eq $sminute ]; then
+						if (( $crashminute == $sminute )); then
 							
-							if [ $crashsecond -ge $ssecond ]; then
+							if (( $crashsecond >= $ssecond )); then
 								foundit
 							fi
 
-						elif [ $crashminute -gt $sminute ]; then
+						elif (( $crashminute > $sminute )); then
 							foundit
 						fi
 
-					elif [ $crashhour -gt $shour ]; then
+					elif (( $crashhour > $shour )); then
 						foundit
 					fi
 
-				elif [ $crashday -gt $sday ]; then
+				elif (( $crashday > $sday )); then
 					foundit
 				fi
 
-			elif [ $crashmonth -gt $smonth ]; then
+			elif (( $crashmonth > $smonth )); then
 				foundit
 			fi
 
-		elif [ $crashyear -gt $syear ]; then
+		elif (( $crashyear > $syear )); then
 			foundit
 		fi
 	}
@@ -772,21 +775,21 @@ start()
 	#do this once you find what crashlog goes with the file
 	foundit()
 	{
-		if [ $( echo "$crash" | grep -c "panic" ) -eq 0 ]; then
+		if (( $( echo "$crash" | grep -ci "panic" ) == 0 )); then
 			crashtype=$( echo "$crash" | sed -e 's|com.apple.[a-zA-Z]*\.||g' -e 's|_.*||g' -e 's|-.*||g' -e 's|\..*||g' ) #type of crash determined by whatever comes before '-', '_', or '.' in crash name
 		else
 			crashtype="panic"
 		fi
 
 		#create directory if it does not exist, and copy files to that directory
-		smart_mkdir "$wrkdir"/Results/"$crashtype"_"$seed"/
+		smart_mkdir "$wrkdir/Results/${crashtype}_$seed/"
 		smart_mkdir "$wrkdir/Crashes/"
-		cp "$dir"/"$crash" "$wrkdir"/Crashes/
-		smart_mv "$dir"/"$crash" "$wrkdir"/Results/"$crashtype"_"$seed"/
-		smart_mv /private/var/www/files/"$seed"."$extension" "$wrkdir"/Results/"$crashtype"_"$seed"/
+		cp "$dir/$crash" "$wrkdir/Crashes/"
+		smart_mv "$dir/$crash" "$wrkdir/Results/${crashtype}_$seed/"
+		smart_mv "/private/var/www/files/$seed.$extension" "$wrkdir/Results/${crashtype}_$seed/"
 
 		echo "Moved $crash"
-		sed -i -r "s|~$seed .*|&\*|g" "$wrkdir"/tested.log
+		sed -i -r "s|~$seed .*|&\*|g" "$wrkdir/tested.log"
 	}
 
 	#do this if the file crashed something
@@ -794,7 +797,7 @@ start()
 	{	
 		#increment $crashes and write to config
 		((crashes++))
-		if [ $( egrep -c "$crashesfileregex" "$config" ) -ge 1 ]; then
+		if (( $( egrep -c "$crashesfileregex" "$config" ) >= 1 )); then
 			sed -i "s|$( egrep "$crashesfileregex" "$config" | tail -n 1 )|crashes: $crashes|g" "$config"
 		else
 			echo "crashes: $crashes" >> "$config"
@@ -804,44 +807,54 @@ start()
 		for dir in "${crashdirs[@]}"; do
 			smart_cd "$dir/"
 			#Remove Duplicates
-			if [ $( ls ./ | grep -c "Latest.*plist" ) -ge 1 ]; then
+			if (( $( ls ./ | grep -c "Latest.*plist" ) >= 1 )); then
 				rm ./Latest*.plist
 			fi
-			if [ $( ls ./ | grep -c "Latest.*ips" ) -ge 1 ]; then
+			if (( $( ls ./ | grep -c "Latest.*ips" ) >= 1 )); then
 				rm ./Latest*.ips
 			fi
 			#Remove crap
-			if [ $( ls ./ | grep -c "ResetCounter.*plist" ) -ge 1 ]; then
+			if (( $( ls ./ | grep -c "ResetCounter.*plist" ) >= 1 )); then
 				rm ./ResetCounter*.plist
 			fi
-			if [ $( ls ./ | grep -c "ResetCounter.*ips" ) -ge 1 ]; then
+			if (( $( ls ./ | grep -c "ResetCounter.*ips" ) >= 1 )); then
 				rm ./ResetCounter*.ips
 			fi
-			if [ $( ls ./ | grep -c "LowBatteryLog.*plist" ) -ge 1 ]; then
+			if (( $( ls ./ | grep -c "LowBatteryLog.*plist" ) >= 1 )); then
 				rm ./LowBatteryLog*.plist
 			fi
-			if [ $( ls ./ | grep -c "LowBatteryLog.*ips" ) -ge 1 ]; then
+			if (( $( ls ./ | grep -c "LowBatteryLog.*ips" ) >= 1 )); then
 				rm ./LowBatteryLog*.ips
 			fi
 			#Fix for iOS7+ crashes
 			for crash in *.synced; do
-				if [ -e "$crash" ]; then
-					if [ $( echo "$crash" | grep -c ".synced" ) -ge 1 ]; then
+				if [[ -e "$crash" ]]; then
+					if (( $( echo "$crash" | grep -c ".synced" ) >= 1 )); then
 						smart_mv "$dir/$crash" "$dir/$( echo $crash | sed 's|.synced||g' )"
 					fi
 				fi
 			done
 			#Move all crashes to directory with solved file
 			for crash in *.plist; do
-				if [ -e "$crash" ]; then
+				if [[ -e "$crash" ]]; then
 					getcrashtime "$crash"
-					comparetimes
+					if (( $? == 0 )); then
+						comparetimes
+					else
+						smart_cd "$wrkdir/"
+						return 1
+					fi
 				fi
 			done
 			for crash in *.ips; do
-				if [ -e "$crash" ]; then
+				if [[ -e "$crash" ]]; then
 					getcrashtime "$crash"
-					comparetimes
+					if (( $? == 0 )); then
+						comparetimes
+					else
+						smart_cd "$wrkdir/"
+						return 1
+					fi
 				fi
 			done
 
@@ -852,13 +865,13 @@ start()
 	injector()
 	{
 		j=1
-		cp "$file" ./file."$extension" &> /dev/null
+		cp "$file" "$wrkdir/file.${extension}" &> /dev/null
 
 		#may not be necessary, but the idea is that as your device slows down from testing more files, it will add to the sleep time
 		slowdown()
 		{
 			let j+=1
-			if [ $j -ge 15 ]; then
+			if (( $j >= 15 )); then
 				time=$( bc <<< "scale=1;$time+ 0.1" )
 				j=1
 				echo "Time incremented"
@@ -881,11 +894,11 @@ start()
 
 		checklocked()
 		{
-			if [ $exitstatus -ne 0 ]; then
+			if (( $exitstatus != 0 )); then
 				getversion
-				if [ $ios -le 6 ]; then
+				if (( $ios <= 6 || $ios >= 9 )); then
 					echo "Unknown error opening MobileSafari."
-				elif [ $ios -ge 7 ]; then
+				else
 					echo "Error opening MobileSafari, please ensure your device is unlocked."
 				fi
 				sleep 3
@@ -909,10 +922,10 @@ start()
 			sleep $time
 			safarireset
 			echo "Safari has been successfully reset."
-			if [ $slowdown -eq 1 ]; then
+			if (( $slowdown == 1 )); then
 				slowdown
 			fi
-			echo "~$seed $( date '+%y.%m.%d-%H.%M.%S' )" >> ./tested.log
+			echo "~$seed $( date '+%y.%m.%d-%H.%M.%S' )" >> "$wrkdir/tested.log"
 		}
 
 		#installs launch daemon so that we can recover from any potential panics
@@ -958,8 +971,7 @@ echo '<?xml version="1.0" encoding="UTF-8"?>
 		install_recovery
 		for (( i = $seed; i < 10000; i++ )); do
 			seed="$i"
-			if [ $( grep -c "~$seed " ./tested.log ) -lt 1 ]; then
-
+			if (( $( grep -c "~$seed " "$wrkdir/tested.log" ) < 1 )); then
 				setstime
 
 				crashcount
@@ -970,15 +982,15 @@ echo '<?xml version="1.0" encoding="UTF-8"?>
 				crashcount
 				after=$crashcount
 
-				if [ $after -gt $before ]; then
+				if (( $after > $before )); then
 					echo "Crashed!"
 
 					crashed
-
+					if (( $? != 0 )); then
+						echo "Something went wrong with the crash file: $crash"
+					fi
 				else
-
 					smart_rm /private/var/www/files/"$seed"."$extension"
-
 				fi
 
 			else
@@ -992,26 +1004,29 @@ echo '<?xml version="1.0" encoding="UTF-8"?>
 	}
 
 	#determine what $seed was
-	if [ $( egrep -c "([~][0-9]+)" ./tested.log ) -ge 1 ]; then
-		seed=$( egrep -o "([~][0-9]+)" ./tested.log | tail -n 1 | egrep -o "([0-9]+)" )
+	if (( $( egrep -c "([~][0-9]+)" "$wrkdir/tested.log" ) >= 1 )); then
+		seed=$( egrep -o "([~][0-9]+)" "$wrkdir/tested.log" | tail -n 1 | egrep -o "([0-9]+)" )
 		((seed++))
 	else
 		seed=1
 	fi
 
 	#recover from kpanic
-	if [ $didpanic -eq 1 ]; then
+	if (( $didpanic == 1 )); then
 		echo "Recovering from unexpected termination..."
-		echo "~$seed $( date '+%y.%m.%d-%H.%M.%S' )" >> ./tested.log
+		echo "~$seed $( date '+%y.%m.%d-%H.%M.%S' )" >> "$wrkdir/tested.log"
 
 		setstime
 
 		crashed
+		if (( $? != 0 )); then
+			echo "Something went wrong with the crash file: $crash"
+		fi
 
 		echo "Recovered successfully."
-		if [ $kernel = 0 ]; then
+		if (( $kernel == 0 )); then
 			stop
-			cleanexit
+			return 0
 		else
 			echo "Resuming fuzzing session."
 		fi
@@ -1019,14 +1034,14 @@ echo '<?xml version="1.0" encoding="UTF-8"?>
 	fi
 
 	#run the file injector in the background, store its pid to the pidfile
-	injector &>> "./fuzz.log" &
+	injector &>> "$wrkdir/fuzz.log" &
 	injectorpid=$!
 
 	echo "$injectorpid" >> "$pidfile"
 
 	#watch it go
-	if [ $didpanic -eq 0 ]; then
-		tail -n 0 -f "./fuzz.log"
+	if (( $didpanic == 0 )); then
+		tail -n 0 -f "$wrkdir/fuzz.log"
 	fi
 }
 
@@ -1041,23 +1056,23 @@ stop()
 
 	if [[ -e "$config" ]]; then
 		#remove stime from config
-		if [ $( egrep -c "$stimefileregex" "$config" ) -ge 1 ]; then
+		if (( $( egrep -c "$stimefileregex" "$config" ) >= 1 )); then
 			sed -i -r "\@$stimefileregex@d" "$config"
 		fi
 
 		#remove crash count from config
-		if [ $( egrep -c "$crashesfileregex" "$config" ) -ge 1 ]; then
+		if (( $( egrep -c "$crashesfileregex" "$config" ) >= 1 )); then
 			sed -i -r "\@$crashesfileregex@d" "$config"
 		fi
 
 		#set kernel=0 in config
-		if [ $( egrep -c "$kernelfileregex" "$config" ) -ge 1 ]; then
+		if (( $( egrep -c "$kernelfileregex" "$config" ) >= 1 )); then
 			sed -i -r "\@$kernelfileregex@d" "$config"
 			echo "kernel: 0" >> "$config"
 		fi
 
 		#set slowdown=0 in config
-		if [ $( egrep -c "$slowdownfileregex" "$config" ) -ge 1 ]; then
+		if (( $( egrep -c "$slowdownfileregex" "$config" ) >= 1 )); then
 			sed -i -r "\@$slowdownfileregex@d" "$config"
 			echo "slowdown: 0" >> "$config"
 		fi
@@ -1070,19 +1085,19 @@ stop()
 	fi
 
 	#clean up for new fuzzing session
-	if [[ -e "./fuzz.log" ]]; then
-		echo "Number of crashes: $crashes" | tee -a ./fuzz.log
-		if [ $( cat ./fuzz.log | wc -l ) -ge 1 ]; then
-			smart_mkdir "./logs/"
-			smart_mv "./fuzz.log" "./logs/$( date '+%y.%m.%d-%H.%M.%S' ).log"
+	if [[ -e "$wrkdir/fuzz.log" ]]; then
+		echo "Number of crashes: $crashes" | tee -a "$wrkdir/fuzz.log"
+		if (( $( cat "$wrkdir/fuzz.log" | wc -l ) >= 1 )); then
+			smart_mkdir "$wrkdir/logs/"
+			smart_mv "$wrkdir/fuzz.log" "$wrkdir/logs/$( date '+%y.%m.%d-%H.%M.%S' ).log"
 		fi
 	fi
 
 	#end processes
 	removecurrentpid
 	if [[ -e "$pidfile" ]]; then
-		if [ $( egrep -c "(^[0-9]+$)" "$pidfile" ) -ge 1 ]; then
-			while [ $( egrep -c "(^[0-9]+$)" "$pidfile" ) -ge 1 ];
+		if (( $( egrep -c "(^[0-9]+$)" "$pidfile" ) >= 1 )); then
+			while (( $( egrep -c "(^[0-9]+$)" "$pidfile" ) >= 1 ));
 			do
 				pid=$( egrep -o "(^[0-9]+$)" "$pidfile" | head -n 1 )
 				kill -- -$( ps opgid= "$pid" | tr -d ' ' ) &> /dev/null
@@ -1104,7 +1119,7 @@ watch()
 {
 	#detect whether fuzzycactus process is running
 	is_running
-	if [ $isrunning -eq 1 ]; then
+	if (( $isrunning == 1 )); then
 		readcrashes
 		echo "Number of crashes so far in this session: $crashes"
 		tail -n 1 -f "$wrkdir/fuzz.log"
@@ -1123,6 +1138,7 @@ update()
 	exitstatus="$?"
 	if (( $exitstatus != 0 )); then
 		echo "Unable to contact the update server, try again later."
+		smart_rm "$wrkdir"/fuzzycactus_update
 		return 1
 	fi
 	remoteversion="$( egrep "^version=\"$versionregex\"$" "$wrkdir"/fuzzycactus_update | head -n 1 | egrep -o "$versionregex" 2> /dev/null )"
@@ -1133,8 +1149,7 @@ update()
 		echo "Remote version: $remoteversion"
 		while (true);
 		do
-			echo "Would you like to update? (y/n)"
-			read answer
+			read -p "Would you like to update? (y/n): " answer
 			if [[ "$answer" =~ [Nn] ]]; then
 				smart_rm "$wrkdir"/fuzzycactus_update
 				return 1
