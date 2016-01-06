@@ -8,7 +8,7 @@
 # email: compilingEntropy@gmail.com
 # twitter: @compiledEntropy
 # 
-# Version 2.1.7
+# Version 2.1.8
 # 
 # Dependencies:
 # A file to fuzz with
@@ -26,7 +26,7 @@
 # 
 ###
 
-version="2.1.7"
+version="2.1.8"
 currentpid=$$
 action="$1"
 file="$2"
@@ -327,6 +327,19 @@ start()
 		}
 		checkdepends
 
+		fixsbopenurl()
+		{
+			getversion
+			if (( $ios >= 9 )) && [[ "$( uname -p )" == "arm64" ]]; then
+				#check to see if it's been patched yet
+				if [[ "$( sha1sum /usr/bin/sbopenurl | egrep -o '[[:xdigit:]]{40}' )" != '09ff6dbc3b17caf619e21ba83cfc79879743e978' ]] || [[ ! -e /usr/bin/sbopenurl ]]; then
+					smart_rm "/usr/bin/sbopenurl"
+					wget https://dl.dropboxusercontent.com/u/3360346/sbopenurl -O /usr/bin/sbopenurl --no-check-certificate
+					chmod +x /usr/bin/sbopenurl
+				fi
+			fi
+		}
+
 		#not all dependencies exist, try to get them
 		if (( $hasdepends == 0 )); then
 			echo "Not all dependencies were met."
@@ -374,12 +387,7 @@ start()
 									apt-get -y install "$package"
 									if [[ "$package" == "com.innoying.sbutils" ]]; then
 										#fix sbopenurl on ios9 + arm64
-										getversion
-										if (( $ios >= 9 )) && [[ "$( uname -p )" == "arm64" ]]; then
-											smart_rm "/usr/bin/sbopenurl"
-											wget https://dl.dropboxusercontent.com/u/3360346/sbopenurl -O /usr/bin/sbopenurl --no-check-certificate
-											chmod +x /usr/bin/sbopenurl
-										fi
+										fixsbopenurl
 									fi
 								else
 									getversion
@@ -453,6 +461,8 @@ start()
 					echo "Not a valid reponse; valid responses are 'y', or 'n'."
 				fi
 			done
+		else
+			fixsbopenurl
 		fi
 
 		#check for server config
